@@ -8,8 +8,8 @@ watchdog on the child's PC.
 | Path | What |
 |---|---|
 | `server/` | FastAPI + Postgres cloud API: schema, admin auth (password + TOTP), device management, agent sync protocol |
-| `agent/` | Windows agent (PowerShell): SYSTEM watchdog + interactive UI agent. *To be ported from V1.* |
-| `docs/V2-ARCHITECTURE.md` | Design, decisions, protocol, and the recommendations still waiting on a decision |
+| `agent/` | Windows agent (PowerShell 5.1+): SYSTEM watchdog, UI agent (lock screen, countdown, messages), installer. See [agent/README.md](agent/README.md). |
+| `docs/V2-ARCHITECTURE.md` | Design, decisions, agent protocol, build status, and the recommendations still waiting on a decision |
 
 Quick start: `docker compose up --build`, then open http://localhost:8000/docs. Full details are in
 [docs/V2-ARCHITECTURE.md](docs/V2-ARCHITECTURE.md).

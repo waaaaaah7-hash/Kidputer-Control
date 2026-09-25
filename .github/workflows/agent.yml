@@ -1,0 +1,30 @@
+name: Agent
+
+on:
+  push:
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+  pull_request:
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # powershell = Windows PowerShell 5.1 (what the SYSTEM task runs); pwsh = PowerShell 7
+        shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse all scripts and compile the native interop
+        run: ./agent/tests/Parse.Tests.ps1
+      - name: Unit tests
+        run: ./agent/tests/Common.Tests.ps1
+      - name: WinForms types load (UI agent dependencies)
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type -Namespace SmUi -Name User32 -MemberDefinition '[DllImport("user32.dll")] public static extern bool LockWorkStation();'
+          [System.Windows.Forms.SystemInformation]::VirtualScreen | Out-Null

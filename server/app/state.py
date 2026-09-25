@@ -3,17 +3,46 @@
 import base64
 import hashlib
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Device, LockRequest, Message, Override
+from .models import Device, LockRequest, Message, Override, ScheduleEntry
+
+# How far ahead lock windows are precomputed. The agent falls back to evaluating the weekly schedule
+# in the PC's local time only if it has been offline for longer than this.
+LOCK_WINDOW_HORIZON = timedelta(days=14)
 
 
 def _iso(dt: datetime) -> str:
-    return dt.isoformat()
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def lock_windows(entries: list[ScheduleEntry], tz_name: str, now: datetime) -> tuple[list[dict[str, str]], datetime]:
+    """Expand the weekly schedule into absolute UTC windows covering [now, now + horizon).
+
+    Done server-side because Windows PowerShell 5.1 has no IANA time zone support, and the child could
+    otherwise dodge the schedule by changing the PC's time zone (standard users are allowed to).
+    """
+    tz = ZoneInfo(tz_name)
+    until = now + LOCK_WINDOW_HORIZON
+    by_day = {e.day_of_week: e for e in entries}
+    windows = []
+    today = now.astimezone(tz).date()
+    for offset in range(-1, LOCK_WINDOW_HORIZON.days + 1):
+        day: date = today + timedelta(days=offset)
+        entry = by_day.get(day.weekday())
+        if entry is None:
+            continue
+        end_day = day if entry.unlock_at > entry.lock_at else day + timedelta(days=1)
+        start = datetime.combine(day, entry.lock_at, tz)
+        end = datetime.combine(end_day, entry.unlock_at, tz)
+        if end > now and start < until:
+            windows.append({"start": _iso(start), "end": _iso(end)})
+    return windows, until
 
 
 def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
@@ -29,6 +58,8 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
         )
     )
     lock = db.scalar(select(LockRequest).where(LockRequest.device_id == device.id, LockRequest.cleared_at.is_(None)))
+    # Truncate to the hour so the ETag (a hash of this snapshot) only changes when the windows do.
+    windows, windows_until = lock_windows(device.schedule, device.timezone, now.replace(minute=0, second=0, microsecond=0))
 
     return {
         "device_id": str(device.id),
@@ -41,6 +72,8 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
             {"day_of_week": e.day_of_week, "lock_at": e.lock_at.strftime("%H:%M"), "unlock_at": e.unlock_at.strftime("%H:%M")}
             for e in device.schedule
         ],
+        "lock_windows": windows,
+        "lock_windows_until": _iso(windows_until),
         "pin": {
             "algorithm": "pbkdf2-sha256",
             "hash": base64.b64encode(s.pin_hash).decode() if s.pin_hash else None,

@@ -6,6 +6,7 @@ local queue that is flushed to POST /agent/events; client_event_id makes retries
 """
 
 import uuid
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response, status
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_admin
 from ..deps import DbDep, DeviceDep, utcnow
-from ..models import ActivityEvent, Device, LockRequest, Message
+from ..models import ActivityEvent, Device, LockRequest, Message, Override
 from ..schemas import AgentEventIn, AgentEventsIn, AgentEventsOut, EnrollRequest, EnrollResponse, HeartbeatIn
 from ..security import new_token, normalize_enrollment_code, token_hash
 from ..state import build_state, state_etag
@@ -77,6 +78,18 @@ def _parse_uuid(value: Any) -> uuid.UUID | None:
         return None
 
 
+def _parse_dt(value: Any) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo is not None else None
+
+
+# Longest window a lock-screen PIN may grant (device_settings.pin_override_minutes is capped at a day).
+_MAX_PIN_OVERRIDE = timedelta(days=1)
+
+
 def _apply_side_effects(db: Session, device: Device, ev: AgentEventIn) -> None:
     """Fold agent acknowledgements back into the admin-visible state."""
     data = ev.data or {}
@@ -95,6 +108,18 @@ def _apply_side_effects(db: Session, device: Device, ev: AgentEventIn) -> None:
         lock = db.get(LockRequest, lock_id) if lock_id else None
         if lock is not None and lock.device_id == device.id and lock.applied_at is None:
             lock.applied_at = ev.occurred_at
+    elif ev.event_type == "lock.released_by_pin":
+        # A parent entered the PIN at the lock screen: the immediate lock is over for everyone.
+        lock_id = _parse_uuid(data.get("lock_request_id"))
+        lock = db.get(LockRequest, lock_id) if lock_id else None
+        if lock is not None and lock.device_id == device.id and lock.cleared_at is None:
+            lock.cleared_at = ev.occurred_at
+    elif ev.event_type == "pin.override_granted":
+        # Mirror the agent's local PIN override so the dashboard shows it and the next sync keeps it.
+        starts, ends = _parse_dt(data.get("starts_at")), _parse_dt(data.get("ends_at"))
+        if starts is None or ends is None or not (starts < ends <= starts + _MAX_PIN_OVERRIDE):
+            return
+        db.add(Override(device_id=device.id, starts_at=starts, ends_at=ends, reason="Lock-screen PIN"))
 
 
 @router.post("/events", response_model=AgentEventsOut)

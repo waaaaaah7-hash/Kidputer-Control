@@ -1,7 +1,7 @@
 import base64
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -117,3 +117,27 @@ def test_agent_token_is_not_an_admin_session(agent):
 def test_healthz():
     with TestClient(app) as c:
         assert c.get("/healthz").json() == {"status": "ok"}
+
+
+def test_pin_override_is_mirrored_to_server(admin_client, agent):
+    now = datetime.now(timezone.utc)
+    ev = _event("pin.override_granted", starts_at=now.isoformat(), ends_at=(now + timedelta(minutes=60)).isoformat())
+    agent.post("/api/v1/agent/events", json={"events": [ev]})
+    overrides = admin_client.get(f"/api/v1/devices/{agent.device_id}/overrides").json()
+    assert len(overrides) == 1 and overrides[0]["reason"] == "Lock-screen PIN"
+    assert len(agent.get("/api/v1/agent/state").json()["overrides"]) == 1
+
+
+def test_pin_override_rejects_bogus_windows(admin_client, agent):
+    now = datetime.now(timezone.utc)
+    too_long = _event("pin.override_granted", starts_at=now.isoformat(), ends_at=(now + timedelta(days=30)).isoformat())
+    garbage = _event("pin.override_granted", starts_at="yesterday", ends_at=None)
+    agent.post("/api/v1/agent/events", json={"events": [too_long, garbage]})
+    assert admin_client.get(f"/api/v1/devices/{agent.device_id}/overrides").json() == []
+
+
+def test_pin_releases_immediate_lock(admin_client, agent):
+    lock = admin_client.post(f"/api/v1/devices/{agent.device_id}/lock", json={}).json()
+    agent.post("/api/v1/agent/events", json={"events": [_event("lock.released_by_pin", lock_request_id=lock["id"])]})
+    assert admin_client.get(f"/api/v1/devices/{agent.device_id}/lock").json() is None
+    assert agent.get("/api/v1/agent/state").json()["immediate_lock"] is None
