@@ -1,0 +1,27 @@
+# Local development stack: Postgres + API on http://localhost:8000 (docs at /docs).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sm
+      POSTGRES_PASSWORD: sm
+      POSTGRES_DB: sessionmonitor
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sm"]
+      interval: 2s
+      retries: 15
+
+  api:
+    build: ./server
+    environment:
+      SM_DATABASE_URL: postgresql+psycopg://sm:sm@db:5432/sessionmonitor
+      SM_COOKIE_SECURE: "false"   # local http only; leave default (true) in any hosted deployment
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
