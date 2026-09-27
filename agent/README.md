@@ -19,14 +19,14 @@ Requirements:
 - A **standard** (non-administrator) account for the child.
 
 Steps:
-1. In the dashboard, add a device. Copy the enrollment code it shows, for example `ABCD-EFGH-JKMN`.
-   The code is valid for 24 hours.
+1. In the dashboard, click **Add a PC**. It shows the enrollment code (valid for 24 hours) and the
+   exact install command, including your dashboard's URL.
 2. Copy this `agent` folder to the child's PC.
 3. Open **PowerShell as administrator** on the child's PC and run:
 
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
-   .\Install.ps1 -ApiUrl https://your-api.example.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
+   .\Install.ps1 -ApiUrl https://session-monitor.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
    ```
 
    For a Microsoft account, use `-ChildUser MicrosoftAccount\sam@example.com`.

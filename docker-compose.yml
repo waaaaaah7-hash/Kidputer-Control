@@ -1,4 +1,4 @@
-# Local development stack: Postgres + API on http://localhost:8000 (docs at /docs).
+# Local stack: Postgres + dashboard/API on http://localhost:8000 (API docs at /docs).
 services:
   db:
     image: postgres:16
@@ -14,10 +14,12 @@ services:
       retries: 15
 
   api:
-    build: ./server
+    build: .
     environment:
       SM_DATABASE_URL: postgresql+psycopg://sm:sm@db:5432/sessionmonitor
       SM_COOKIE_SECURE: "false"   # local http only; leave default (true) in any hosted deployment
+      SM_BOOTSTRAP_ADMIN_EMAIL: ${SM_BOOTSTRAP_ADMIN_EMAIL:-}
+      SM_BOOTSTRAP_ADMIN_PASSWORD: ${SM_BOOTSTRAP_ADMIN_PASSWORD:-}
     ports: ["8000:8000"]
     depends_on:
       db:

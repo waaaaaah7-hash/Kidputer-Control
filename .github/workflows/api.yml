@@ -2,9 +2,9 @@ name: API
 
 on:
   push:
-    paths: ["server/**", "agent/**", ".github/workflows/api.yml"]
+    paths: ["server/**", "agent/**", "web/**", ".github/workflows/api.yml"]
   pull_request:
-    paths: ["server/**", "agent/**", ".github/workflows/api.yml"]
+    paths: ["server/**", "agent/**", "web/**", ".github/workflows/api.yml"]
 
 jobs:
   test:
@@ -29,8 +29,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" playwright
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build dashboard (for the browser end-to-end test)
+        working-directory: web
+        run: npm ci && npm run build
+      - run: python -m playwright install --with-deps chromium
       - name: Migrations match models
         run: SM_DATABASE_URL=$SM_TEST_DATABASE_URL alembic upgrade head && SM_DATABASE_URL=$SM_TEST_DATABASE_URL alembic check
-      # Includes the agent<->API integration test (pwsh is preinstalled on ubuntu-latest).
+      # Includes the agent<->API integration test (pwsh is preinstalled on ubuntu-latest)
+      # and the dashboard end-to-end test in Chromium.
       - run: pytest -q

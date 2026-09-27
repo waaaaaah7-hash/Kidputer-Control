@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SM_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://sm:sm@localhost:5432/sessionmonitor"
+
+    # Built dashboard (web/dist). When the folder exists it is served at "/", same origin as the API.
+    static_dir: str = "static"
+
+    # One-time bootstrap for hosts without a shell (e.g. Render free tier): if no admin exists yet at
+    # startup, create this one. Remove SM_BOOTSTRAP_ADMIN_PASSWORD from the environment afterwards.
+    bootstrap_admin_email: str = ""
+    bootstrap_admin_password: str = ""
 
     # Admin sessions
     session_cookie_name: str = "sm_session"
@@ -30,6 +39,15 @@ class Settings(BaseSettings):
 
     # Allowed browser origins for the dashboard (comma separated)
     cors_origins: str = ""
+
+    @field_validator("database_url")
+    @classmethod
+    def _psycopg_driver(cls, v: str) -> str:
+        # Hosts (Render, Heroku-style) hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the driver.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix) :]
+        return v
 
 
 @lru_cache

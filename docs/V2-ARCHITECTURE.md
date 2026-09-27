@@ -25,12 +25,14 @@ detection, and logging. There is no `settings.json` to migrate.
 | 1. Postgres schema + FastAPI backend + auth | **Done** (`server/`) |
 | 2. Agent config and logs go through the API, with a local cache | **Done** (`agent/SessionMonitor/Modules/SessionMonitor.Common.psm1`) |
 | 3. SYSTEM watchdog + launching the UI into the child's session | **Done** (`agent/SessionMonitor/Watchdog.ps1`, `UiAgent.ps1`, `Install.ps1`). See the verification note below. |
-| 4. Web dashboard | Next |
+| 4. Web dashboard | **Done** (`web/`: React + TypeScript + Vite, served by FastAPI). Deploys to Render: see `docs/DEPLOY-RENDER.md`. |
 
 **Verification:**
 - The API has full test coverage against Postgres.
 - The agent's decision, PIN, queue, inbox, and tamper logic has unit tests.
 - The agent's HTTP code has an integration test against a live API.
+- The dashboard has an end-to-end test in Chromium against a live API. It covers sign-in, 2FA
+  setup, adding a PC, and every device action, and checks that nothing overflows at phone width.
 - Every script parses, and the Win32 interop compiles.
 - CI runs the agent tests on Windows under both PowerShell 5.1 and 7.
 - **Not yet exercised on a real PC:** the parts that need an interactive Windows session. These
@@ -201,31 +203,35 @@ Any other `event_type` matching `^[a-z][a-z0-9_.]{0,63}$` is stored as is. The a
 - **Sync pacing:** at most one HTTP call per 1-second tick, with a 10-second timeout. A slow
   network can't delay relaunching the UI for long.
 
-## Open questions — recommendations
+## Hosting and dashboard
 
-These are still undecided. The watchdog host question from the brief is decided and covered in
-"Agent design" above.
-
-- **Hosting:** **Render** or **Railway**. Both run the included `server/Dockerfile` directly, offer
-  managed Postgres with backups, and terminate TLS for you. Fly.io's Postgres needs more hands-on
-  management, and Azure is more setup than a single-household app needs.
-- **Frontend:** **React + TypeScript + Vite**, built as a static SPA and served from the **same
-  origin** as the API (for example, `/` for the SPA and `/api` for the API). Same origin keeps the
-  SameSite=Strict cookie working without CORS.
+- **Hosting: Render.** A Blueprint (`render.yaml`) defines one Docker web service plus Render
+  Postgres. The root `Dockerfile` builds the dashboard and the API into a single image. See
+  `docs/DEPLOY-RENDER.md`.
+- **Dashboard: React + TypeScript** (Vite), in `web/`. It is a static SPA served by FastAPI from
+  the same origin as the API:
+  - The SameSite=Strict session cookie works without CORS.
+  - The API sends a strict Content-Security-Policy for the app: `'self'` only, no inline scripts.
+  - Its only runtime dependencies are React, React Router, and `qrcode` (for the 2FA QR code).
+- **First admin:** Render's free tier has no shell, so the first admin is created at start-up from
+  `SM_BOOTSTRAP_ADMIN_EMAIL`/`SM_BOOTSTRAP_ADMIN_PASSWORD`, and only while no admin exists.
 
 ## Running locally
 
 ```bash
-docker compose up --build          # API on http://localhost:8000, OpenAPI docs at /docs
-docker compose exec api python -m app.cli create-admin you@example.com
+SM_BOOTSTRAP_ADMIN_EMAIL=you@example.com SM_BOOTSTRAP_ADMIN_PASSWORD='a long local password' \
+  docker compose up --build        # dashboard + API on http://localhost:8000, API docs at /docs
 ```
+
+For dashboard development with hot reload, run `cd web && npm install && npm run dev`. It proxies
+`/api` to the API on port 8000.
 
 Running the tests needs a Postgres the tests can own:
 
 ```bash
 cd server && pip install -e ".[dev]"
 export SM_TEST_DATABASE_URL=postgresql+psycopg://sm:sm@localhost:5432/sessionmonitor_test
-pytest
+pytest   # add SM_PWSH=<pwsh> for the agent integration test; build web/ + install playwright for the browser test
 ```
 
 Configuration uses `SM_*` environment variables (see `server/app/config.py`). In production,

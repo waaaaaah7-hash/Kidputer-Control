@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -217,8 +218,9 @@ def create_override(device_id: uuid.UUID, body: OverrideIn, db: DbDep, admin: Ad
     o = Override(device_id=device.id, starts_at=starts, ends_at=ends, reason=body.reason, created_by=admin.id)
     db.add(o)
     db.flush()
+    local_end = ends.astimezone(ZoneInfo(device.timezone))
     log_admin(
-        db, admin, "override.created", f"Override granted until {ends.isoformat()}", device.id,
+        db, admin, "override.created", f"Unlocked until {local_end:%a %H:%M} ({device.timezone})", device.id,
         {"override_id": str(o.id), "starts_at": starts.isoformat(), "ends_at": ends.isoformat(), "reason": body.reason},
     )
     db.commit()
