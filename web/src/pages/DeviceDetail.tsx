@@ -162,7 +162,7 @@ function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void
         <ActionButton success="Granted 30 minutes" onClick={() => grant(30)}>+30 min</ActionButton>
         <ActionButton success="Granted 1 hour" onClick={() => grant(60)}>+1 hour</ActionButton>
         <ActionButton success="Granted 2 hours" onClick={() => grant(120)}>+2 hours</ActionButton>
-        <form className="row" onSubmit={grantUntil}>
+        <form className="row until" onSubmit={grantUntil}>
           <input type="datetime-local" aria-label="Unlock until" required value={until} onChange={(e) => setUntil(e.target.value)} />
           <button type="submit" className="btn btn-secondary">
             Until…

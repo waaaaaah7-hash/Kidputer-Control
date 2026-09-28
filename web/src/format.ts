@@ -27,7 +27,7 @@ export function relativeTime(iso: string | null | undefined, now: number = Date.
 
 export function formatTime(iso: string | null | undefined, timeZone?: string): string {
   if (!iso) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(iso));
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(iso));
 }
 
 export function formatDateTime(iso: string | null | undefined, timeZone?: string): string {

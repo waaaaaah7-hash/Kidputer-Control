@@ -88,6 +88,8 @@ code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; fon
 .row { display: flex; gap: 0.5rem; align-items: center; }
 .row.wrap { flex-wrap: wrap; }
 .row > input:not([type="checkbox"]):not([type="radio"]) { flex: 1; min-width: 10rem; }
+.until { flex: 1 1 16rem; min-width: 0; }
+.row > .until > input { min-width: 0; }
 .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
 .form-actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; margin-top: 0.75rem; }
 
@@ -197,7 +199,10 @@ fieldset { border: 0; padding: 0; margin: 0; }
   .topbar-user { margin-left: auto; }
   .topbar-user .muted { display: none; }
   .hide-narrow { display: none; }
-  .schedule input[type="time"] { min-width: 0; padding: 0.4rem 0.25rem; }
+  .card { padding: 1rem 0.9rem; }
+  .schedule { table-layout: fixed; }
+  .schedule th:first-child { width: 36%; }
+  .schedule input[type="time"] { min-width: 0; width: 100%; padding: 0.4rem 0.2rem; font-size: 0.85rem; }
   .schedule th label.inline { gap: 0.25rem; font-size: 0.9rem; }
   .event { flex-direction: column; gap: 0.1rem; }
   .event-meta { text-align: left; }

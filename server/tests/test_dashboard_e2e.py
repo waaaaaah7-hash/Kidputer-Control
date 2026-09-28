@@ -178,10 +178,13 @@ def test_parent_journey(page, live_app):
     page.locator(".device-card").click()
     expect(page.get_by_role("button", name="Lock now")).to_be_visible()
     too_wide = page.evaluate(
-        """[...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > window.innerWidth + 1)
+        """[...document.querySelectorAll('body *')].filter(e => {
+             const r = e.getBoundingClientRect().right, card = e.closest('.card');
+             return r > window.innerWidth + 1 || (card && card !== e && r > card.getBoundingClientRect().right + 1);
+           })
            .map(e => e.tagName + '.' + e.className + ' ' + Math.round(e.getBoundingClientRect().right)).slice(0, 8)"""
     )
-    assert not too_wide, f"horizontal overflow on phone: {too_wide}"
+    assert not too_wide, f"content overflows on phone: {too_wide}"
     shot(page, "07-phone")
 
     # Sign out.

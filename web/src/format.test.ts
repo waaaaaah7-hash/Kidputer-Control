@@ -32,7 +32,7 @@ describe("deviceStatus", () => {
     const s = deviceStatus(device({ last_status: { mode: "locked", reason: "schedule", unlock_at: "2026-01-13T07:00:00Z" } }), NOW);
     expect(s.label).toBe("Locked");
     expect(s.tone).toBe("danger");
-    expect(s.detail).toMatch(/Scheduled bedtime until 7:00/);
+    expect(s.detail).toMatch(/Scheduled bedtime until 0?7:00/);
   });
 
   it("puts tamper alerts first", () => {
