@@ -58,7 +58,7 @@ def test_new_admin_must_enroll_totp_before_using_dashboard(client):
 
 
 def test_state_changing_requests_need_csrf_header(admin_client):
-    admin_client.headers.pop("X-Session-Monitor")
+    admin_client.headers.pop("X-Kidputer-Control")
     r = admin_client.post("/api/v1/devices", json={"name": "x"})
     assert r.status_code == 403
     assert admin_client.get("/api/v1/devices").status_code == 200

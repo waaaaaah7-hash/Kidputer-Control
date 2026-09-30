@@ -15,9 +15,9 @@ foreach ($file in Get-ChildItem -Path $agentRoot -Recurse -Include '*.ps1', '*.p
 }
 
 Test 'native interop compiles' {
-    $cs = Join-Path $agentRoot 'SessionMonitor\Modules\SessionMonitor.Native.cs'
-    if (-not ('SmNative' -as [type])) { Add-Type -TypeDefinition ([IO.File]::ReadAllText($cs)) }
-    Assert-Equal ([uint32]4294967295) ([SmNative]::NoSession)
+    $cs = Join-Path $agentRoot 'KidputerControl\Modules\KidputerControl.Native.cs'
+    if (-not ('KcNative' -as [type])) { Add-Type -TypeDefinition ([IO.File]::ReadAllText($cs)) }
+    Assert-Equal ([uint32]4294967295) ([KcNative]::NoSession)
 }
 
 Complete-Tests

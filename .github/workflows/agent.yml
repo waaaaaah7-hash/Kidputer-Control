@@ -26,5 +26,5 @@ jobs:
       - name: WinForms types load (UI agent dependencies)
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          Add-Type -Namespace SmUi -Name User32 -MemberDefinition '[DllImport("user32.dll")] public static extern bool LockWorkStation();'
+          Add-Type -Namespace KcUi -Name User32 -MemberDefinition '[DllImport("user32.dll")] public static extern bool LockWorkStation();'
           [System.Windows.Forms.SystemInformation]::VirtualScreen | Out-Null

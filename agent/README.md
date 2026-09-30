@@ -4,7 +4,7 @@ Runs on the child's Windows 11 PC and has two parts:
 
 | Part | Runs as | Job |
 |---|---|---|
-| `Watchdog.ps1` | SYSTEM, from the scheduled task `\SessionMonitor\Watchdog` | Enforcement, PIN checks, tamper detection, cloud sync. Supervises the UI agent. |
+| `Watchdog.ps1` | SYSTEM, from the scheduled task `\KidputerControl\Watchdog` | Enforcement, PIN checks, tamper detection, cloud sync. Supervises the UI agent. |
 | `UiAgent.ps1` | The child, in their own session | Shows the countdown, the lock screen with PIN entry, and messages. Calls `LockWorkStation`. |
 
 A standard user can't stop, change, or delete the SYSTEM task or its process. If the child closes
@@ -26,7 +26,7 @@ Steps:
 
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
-   .\Install.ps1 -ApiUrl https://session-monitor.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
+   .\Install.ps1 -ApiUrl https://kidputer-control.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
    ```
 
    For a Microsoft account, use `-ChildUser MicrosoftAccount\sam@example.com`.
@@ -44,11 +44,11 @@ Then delete the device in the dashboard.
 
 | Path | ACL | Contents |
 |---|---|---|
-| `%ProgramFiles%\SessionMonitor\` | Users: read/execute | The scripts. Their SHA-256 hashes are checked every minute. |
-| `%ProgramData%\SessionMonitor\config\` | SYSTEM + Administrators | `agent.json`, `device.token` (DPAPI), `state.json` (cached config, including the PIN hash), `local.json`, `queue.jsonl` (events not yet uploaded), `manifest.json` |
-| `%ProgramData%\SessionMonitor\logs\` | SYSTEM + Administrators | `agent-YYYY-MM.log`, one file per month, 12 months kept |
-| `%ProgramData%\SessionMonitor\ipc\ui-state.json` | Users: read | What the UI should show. Written only by the watchdog. |
-| `%ProgramData%\SessionMonitor\ipc\inbox\` | Users: create files only | Requests from the UI agent. The watchdog validates each one, then deletes it. |
+| `%ProgramFiles%\KidputerControl\` | Users: read/execute | The scripts. Their SHA-256 hashes are checked every minute. |
+| `%ProgramData%\KidputerControl\config\` | SYSTEM + Administrators | `agent.json`, `device.token` (DPAPI), `state.json` (cached config, including the PIN hash), `local.json`, `queue.jsonl` (events not yet uploaded), `manifest.json` |
+| `%ProgramData%\KidputerControl\logs\` | SYSTEM + Administrators | `agent-YYYY-MM.log`, one file per month, 12 months kept |
+| `%ProgramData%\KidputerControl\ipc\ui-state.json` | Users: read | What the UI should show. Written only by the watchdog. |
+| `%ProgramData%\KidputerControl\ipc\inbox\` | Users: create files only | Requests from the UI agent. The watchdog validates each one, then deletes it. |
 
 The UI agent runs as the child, so it never sees the PIN hash and makes no decisions. It drops a
 PIN attempt into the inbox, and the watchdog checks it and applies the lockout. The watchdog also
@@ -83,8 +83,8 @@ immediate lock. Both results sync to the dashboard.
 The Windows-only parts can't run in CI, so check them by hand after the first install. Do it with
 a short schedule window, or an immediate lock, set from the dashboard.
 
-1. **Task:** `Get-ScheduledTask -TaskPath \SessionMonitor\` shows `Watchdog` as *Running*.
-   `%ProgramData%\SessionMonitor\logs\agent-*.log` shows `agent.started`, with no loop errors.
+1. **Task:** `Get-ScheduledTask -TaskPath \KidputerControl\` shows `Watchdog` as *Running*.
+   `%ProgramData%\KidputerControl\logs\agent-*.log` shows `agent.started`, with no loop errors.
 2. **UI launch:** sign in as the child. Within a few seconds a hidden `powershell.exe` is running
    as the child.
 3. **Countdown:** set a window that starts in two minutes. The countdown box appears bottom-right
@@ -105,7 +105,7 @@ a short schedule window, or an immediate lock, set from the dashboard.
    from the dashboard unlocks the PC within one poll interval.
 9. **Offline:** disconnect the network. Scheduled locking still happens. Reconnect: the queued
    events show up in the dashboard.
-10. **Tamper:** as an administrator, edit a file under `%ProgramFiles%\SessionMonitor`. Within a
+10. **Tamper:** as an administrator, edit a file under `%ProgramFiles%\KidputerControl`. Within a
     minute a critical `tamper.detected` event appears. Re-run `Install.ps1` to restore the files.
 11. **Parent account:** sign in as the parent. No countdown or lock screen appears.
 

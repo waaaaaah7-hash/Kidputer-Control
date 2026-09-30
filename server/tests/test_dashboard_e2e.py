@@ -1,7 +1,7 @@
 """End-to-end: drive the built dashboard (web/dist) in a real browser against a live API.
 
 Skipped unless Playwright is installed and the dashboard has been built (cd web && npm run build).
-SM_CHROMIUM_PATH points Playwright at an existing Chromium; SM_E2E_SCREENSHOTS=<dir> saves screenshots.
+KC_CHROMIUM_PATH points Playwright at an existing Chromium; KC_E2E_SCREENSHOTS=<dir> saves screenshots.
 """
 
 import importlib
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(not (DIST / "index.html").is_file(), reason="das
 
 @pytest.fixture
 def live_app(monkeypatch):
-    monkeypatch.setenv("SM_STATIC_DIR", str(DIST))
+    monkeypatch.setenv("KC_STATIC_DIR", str(DIST))
     from app import config, main
 
     config.get_settings.cache_clear()
@@ -44,7 +44,7 @@ def live_app(monkeypatch):
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     thread.join(timeout=5)
-    monkeypatch.delenv("SM_STATIC_DIR")
+    monkeypatch.delenv("KC_STATIC_DIR")
     config.get_settings.cache_clear()
     importlib.reload(main)
 
@@ -52,7 +52,7 @@ def live_app(monkeypatch):
 @pytest.fixture
 def page(live_app):
     with playwright_api.sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=os.environ.get("SM_CHROMIUM_PATH") or None)
+        browser = p.chromium.launch(executable_path=os.environ.get("KC_CHROMIUM_PATH") or None)
         context = browser.new_context(base_url=live_app, viewport={"width": 1280, "height": 900})
         pg = context.new_page()
         errors: list[str] = []
@@ -64,7 +64,7 @@ def page(live_app):
 
 
 def shot(page, name: str) -> None:
-    out = os.environ.get("SM_E2E_SCREENSHOTS")
+    out = os.environ.get("KC_E2E_SCREENSHOTS")
     if out:
         Path(out).mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(Path(out) / f"{name}.png"), full_page=True)
@@ -106,12 +106,12 @@ def test_parent_journey(page, live_app):
 
     # The agent installs and reports it is locked for the night.
     agent = httpx.Client(base_url=live_app)
-    token = agent.post("/api/v1/agent/enroll", json={"enrollment_code": code, "hostname": "SAM-PC", "agent_version": "2.0.0"}).json()["device_token"]
+    token = agent.post("/api/v1/agent/enroll", json={"enrollment_code": code, "hostname": "SAM-PC", "agent_version": "1.0.0"}).json()["device_token"]
     agent.headers["Authorization"] = f"Bearer {token}"
     agent.post("/api/v1/agent/heartbeat", json={"status": {"mode": "locked", "reason": "schedule", "unlock_at": "2030-01-01T07:00:00Z", "ui_agent_alive": True, "console_user_is_child": True}})
     page.reload()
     expect(page.locator(".device-status .badge")).to_have_text("Locked")
-    expect(page.locator(".device-head")).to_contain_text("SAM-PC · agent 2.0.0")
+    expect(page.locator(".device-head")).to_contain_text("SAM-PC · agent 1.0.0")
 
     # Lock now (immediate lock) with a reason.
     page.get_by_placeholder("Reason (optional").fill("Homework first")

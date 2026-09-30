@@ -1,12 +1,12 @@
 """Postgres schema.
 
-Maps V1's settings.json onto relational tables:
+Maps the product's configuration concepts onto relational tables:
   schedule        -> schedule_entries (one row per weekday)
-  pin             -> device_settings.pin_*
+  PIN             -> device_settings.pin_*
   overrides       -> overrides
-  customMessage   -> messages
-  immediateLock   -> lock_requests
-  local log files -> activity_events (central log for agent + admin actions)
+  custom message  -> messages
+  immediate lock  -> lock_requests
+  activity log    -> activity_events (central log for agent + admin actions)
 """
 
 import uuid
@@ -193,7 +193,7 @@ class Message(Base):
     __table_args__ = (
         CheckConstraint("mode IN ('persistent', 'closable')", name="ck_messages_mode"),
         CheckConstraint("char_length(body) BETWEEN 1 AND 2000", name="ck_messages_body"),
-        # At most one live message per device, matching V1's single customMessage slot.
+        # At most one live message per device, (a new message replaces the current one).
         Index(
             "uq_messages_one_active",
             "device_id",

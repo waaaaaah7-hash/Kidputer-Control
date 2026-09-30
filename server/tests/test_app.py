@@ -44,14 +44,14 @@ def spa_client(tmp_path, monkeypatch):
     (tmp_path / "index.html").write_text("<html>shell</html>")
     (tmp_path / "assets" / "app.js").write_text("console.log(1)")
     (tmp_path / "favicon.svg").write_text("<svg/>")
-    monkeypatch.setenv("SM_STATIC_DIR", str(tmp_path))
+    monkeypatch.setenv("KC_STATIC_DIR", str(tmp_path))
     from app import config, main
 
     config.get_settings.cache_clear()
     reloaded = importlib.reload(main)
     with TestClient(reloaded.app) as c:
         yield c
-    monkeypatch.delenv("SM_STATIC_DIR")
+    monkeypatch.delenv("KC_STATIC_DIR")
     config.get_settings.cache_clear()
     importlib.reload(main)
 

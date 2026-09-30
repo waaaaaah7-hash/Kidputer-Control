@@ -1,6 +1,6 @@
 """Runs the PowerShell agent module's protocol code against a live API server.
 
-Skipped when PowerShell (pwsh) isn't installed. Set SM_PWSH to use a specific binary.
+Skipped when PowerShell (pwsh) isn't installed. Set KC_PWSH to use a specific binary.
 """
 
 import os
@@ -19,7 +19,7 @@ from app.main import app
 
 from .conftest import CSRF, PASSWORD, make_admin, totp_code
 
-PWSH = os.environ.get("SM_PWSH") or shutil.which("pwsh")
+PWSH = os.environ.get("KC_PWSH") or shutil.which("pwsh")
 SCRIPT = Path(__file__).resolve().parents[2] / "agent" / "tests" / "Integration.Tests.ps1"
 
 pytestmark = pytest.mark.skipif(PWSH is None, reason="pwsh not installed")
@@ -53,7 +53,7 @@ def test_agent_module_against_live_api(live_server):
         admin.put(f"/api/v1/devices/{dev}/pin", json={"pin": "246810"})
         admin.post(f"/api/v1/devices/{dev}/lock", json={"reason": "integration"})
 
-        env = {**os.environ, "SM_IT_API_URL": live_server, "SM_IT_ENROLL_CODE": created["enrollment_code"], "SM_IT_PIN": "246810"}
+        env = {**os.environ, "KC_IT_API_URL": live_server, "KC_IT_ENROLL_CODE": created["enrollment_code"], "KC_IT_PIN": "246810"}
         proc = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=180)
         assert proc.returncode == 0, proc.stdout + proc.stderr
 

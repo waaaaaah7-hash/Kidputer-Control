@@ -1,7 +1,7 @@
 [project]
-name = "session-monitor-api"
-version = "2.0.0.dev0"
-description = "Cloud API for Windows Session Monitor V2"
+name = "kidputer-control-api"
+version = "1.0.0"
+description = "Cloud API for Kidputer Control"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

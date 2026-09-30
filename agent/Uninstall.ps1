@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Remove the Session Monitor agent. Run from an elevated PowerShell.
+    Remove the Kidputer Control agent. Run from an elevated PowerShell.
 
 .DESCRIPTION
     Reports the uninstall to the cloud (best effort, so the dashboard shows it), removes the watchdog
@@ -10,7 +10,7 @@
 #>
 [CmdletBinding()]
 param(
-    # Keep %ProgramData%\SessionMonitor\logs.
+    # Keep %ProgramData%\KidputerControl\logs.
     [switch]$KeepLogs
 )
 
@@ -21,22 +21,22 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Run this script from an elevated (Run as administrator) PowerShell.'
 }
 
-$installRoot = Join-Path $env:ProgramFiles 'SessionMonitor'
-$dataRoot = Join-Path $env:ProgramData 'SessionMonitor'
-$taskPath = '\SessionMonitor\'
+$installRoot = Join-Path $env:ProgramFiles 'KidputerControl'
+$dataRoot = Join-Path $env:ProgramData 'KidputerControl'
+$taskPath = '\KidputerControl\'
 $taskName = 'Watchdog'
 
-$module = Join-Path $installRoot 'Modules\SessionMonitor.Common.psm1'
-if (-not (Test-Path $module)) { $module = Join-Path $PSScriptRoot 'SessionMonitor\Modules\SessionMonitor.Common.psm1' }
+$module = Join-Path $installRoot 'Modules\KidputerControl.Common.psm1'
+if (-not (Test-Path $module)) { $module = Join-Path $PSScriptRoot 'KidputerControl\Modules\KidputerControl.Common.psm1' }
 if (Test-Path $module) {
     Import-Module $module -Force
-    $paths = Initialize-SmPaths -DataRoot $dataRoot
+    $paths = Initialize-KcPaths -DataRoot $dataRoot
     try {
-        $cfg = Read-SmJsonFile -Path $paths.AgentFile
-        $token = Get-SmDeviceToken
+        $cfg = Read-KcJsonFile -Path $paths.AgentFile
+        $token = Get-KcDeviceToken
         if ($cfg -and $token) {
-            Add-SmEvent -Type 'agent.uninstalled' -Severity warning -Message "Agent uninstalled by $([Environment]::UserDomainName)\$([Environment]::UserName)"
-            [void](Send-SmQueuedEvents -BaseUrl ([string]$cfg.api_url) -Token $token)
+            Add-KcEvent -Type 'agent.uninstalled' -Severity warning -Message "Agent uninstalled by $([Environment]::UserDomainName)\$([Environment]::UserName)"
+            [void](Send-KcQueuedEvents -BaseUrl ([string]$cfg.api_url) -Token $token)
         }
     } catch { Write-Warning "Could not notify the cloud: $($_.Exception.Message)" }
 }
@@ -49,7 +49,7 @@ if (Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Silen
 try {
     $svc = New-Object -ComObject Schedule.Service
     $svc.Connect()
-    $svc.GetFolder('\').DeleteFolder('SessionMonitor', 0)
+    $svc.GetFolder('\').DeleteFolder('KidputerControl', 0)
 } catch { }
 
 Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
@@ -65,4 +65,4 @@ if ($KeepLogs) {
     Remove-Item -LiteralPath $dataRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host 'Session Monitor has been removed. Delete this device in the dashboard to revoke its token.' -ForegroundColor Green
+Write-Host 'Kidputer Control has been removed. Delete this device in the dashboard to revoke its token.' -ForegroundColor Green

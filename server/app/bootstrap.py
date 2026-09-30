@@ -12,12 +12,12 @@ log = logging.getLogger(__name__)
 
 
 def bootstrap_admin(settings: Settings) -> bool:
-    """Create the first admin from SM_BOOTSTRAP_ADMIN_* if there are no admins yet. Returns True if created."""
+    """Create the first admin from KC_BOOTSTRAP_ADMIN_* if there are no admins yet. Returns True if created."""
     email, password = settings.bootstrap_admin_email.strip(), settings.bootstrap_admin_password
     if not email or not password:
         return False
     if len(password) < MIN_PASSWORD_LENGTH:
-        log.error("SM_BOOTSTRAP_ADMIN_PASSWORD must be at least %d characters; no admin created", MIN_PASSWORD_LENGTH)
+        log.error("KC_BOOTSTRAP_ADMIN_PASSWORD must be at least %d characters; no admin created", MIN_PASSWORD_LENGTH)
         return False
     with SessionLocal() as db:
         # Serialise concurrent workers starting at once.
@@ -29,5 +29,5 @@ def bootstrap_admin(settings: Settings) -> bool:
         db.flush()
         log_admin(db, None, "admin.bootstrapped", f"First admin {email} created from environment")
         db.commit()
-    log.warning("Created first admin %s. Remove SM_BOOTSTRAP_ADMIN_PASSWORD from the environment now.", email)
+    log.warning("Created first admin %s. Remove KC_BOOTSTRAP_ADMIN_PASSWORD from the environment now.", email)
     return True

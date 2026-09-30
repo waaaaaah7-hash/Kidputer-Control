@@ -3,23 +3,23 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: sm
-      POSTGRES_PASSWORD: sm
-      POSTGRES_DB: sessionmonitor
+      POSTGRES_USER: kc
+      POSTGRES_PASSWORD: kc
+      POSTGRES_DB: kidputercontrol
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sm"]
+      test: ["CMD-SHELL", "pg_isready -U kc"]
       interval: 2s
       retries: 15
 
   api:
     build: .
     environment:
-      SM_DATABASE_URL: postgresql+psycopg://sm:sm@db:5432/sessionmonitor
-      SM_COOKIE_SECURE: "false"   # local http only; leave default (true) in any hosted deployment
-      SM_BOOTSTRAP_ADMIN_EMAIL: ${SM_BOOTSTRAP_ADMIN_EMAIL:-}
-      SM_BOOTSTRAP_ADMIN_PASSWORD: ${SM_BOOTSTRAP_ADMIN_PASSWORD:-}
+      KC_DATABASE_URL: postgresql+psycopg://kc:kc@db:5432/kidputercontrol
+      KC_COOKIE_SECURE: "false"   # local http only; leave default (true) in any hosted deployment
+      KC_BOOTSTRAP_ADMIN_EMAIL: ${KC_BOOTSTRAP_ADMIN_EMAIL:-}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-}
     ports: ["8000:8000"]
     depends_on:
       db:

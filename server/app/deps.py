@@ -15,7 +15,7 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 # Browsers cannot attach a custom header to a cross-site request without a CORS preflight, which we
 # don't grant to foreign origins. Requiring it on state-changing cookie-authenticated calls blocks CSRF.
-CSRF_HEADER = "X-Session-Monitor"
+CSRF_HEADER = "X-Kidputer-Control"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 

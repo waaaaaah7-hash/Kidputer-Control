@@ -1,4 +1,4 @@
-# Session Monitor V2
+# Kidputer Control
 
 A parental-control system for Windows 11 PCs. You set a bedtime schedule from a web dashboard.
 The child's PC shows a countdown and then locks, and it keeps enforcing the schedule even when
@@ -65,7 +65,7 @@ or send an on-screen message. Everything that happens is recorded in one central
 | `agent/` | Windows agent: SYSTEM watchdog, UI agent, installer and uninstaller, tests |
 | `Dockerfile`, `render.yaml` | Single-image build and Render Blueprint (web service + Postgres) |
 | `docs/DEPLOY-RENDER.md` | Step-by-step deployment and first sign-in |
-| `docs/V2-ARCHITECTURE.md` | Design decisions, data model, agent protocol |
+| `docs/ARCHITECTURE.md` | Design decisions, data model, agent protocol |
 | `agent/README.md` | Installing on the child's PC, plus a first-run checklist |
 
 ## Getting started
@@ -89,7 +89,7 @@ or send an on-screen message. Everything that happens is recorded in one central
 **Running locally:**
 
 ```bash
-SM_BOOTSTRAP_ADMIN_EMAIL=you@example.com SM_BOOTSTRAP_ADMIN_PASSWORD='a long local password' \
+KC_BOOTSTRAP_ADMIN_EMAIL=you@example.com KC_BOOTSTRAP_ADMIN_PASSWORD='a long local password' \
   docker compose up --build      # dashboard + API on http://localhost:8000
 ```
 
@@ -109,14 +109,25 @@ CI runs all of these. The agent tests run on Windows under both PowerShell 5.1 a
 
 ## Status
 
-All four V2 build steps are complete: the cloud API, the agent syncing through it, the SYSTEM
+Version 1.0.0. All four build steps are complete: the cloud API, the agent syncing through it, the SYSTEM
 watchdog, and the web dashboard.
 
 **Not yet verified on a real PC:** the parts that need an interactive Windows session. These are
 the lock-screen windows, launching into the child's session, the scheduled task, and the folder
 permissions. Before relying on the agent, run through the checklist in `agent/README.md` once.
 
+## Roadmap
+
+- **App and process management** (next version): control which apps the child can run, and when.
+- Also planned: usage quotas, weekly reports, and bonus time.
+
 ## Recent changes
+
+- **Renamed to Kidputer Control, version 1.0.0:**
+  - The product was renamed from Session Monitor, and the version reset to 1.0.0.
+  - Install paths on the PC are now `%ProgramFiles%\KidputerControl` and
+    `%ProgramData%\KidputerControl`, and the scheduled task is `\KidputerControl\Watchdog`.
+  - Settings use the `KC_` prefix, and the Render service is named `kidputer-control`.
 
 - **Dashboard polish:**
   - At phone width, the extra-time row and the schedule table no longer overflow their card. The

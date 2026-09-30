@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 
-public static class SmNative
+public static class KcNative
 {
     public const uint NoSession = 0xFFFFFFFF;
 

@@ -1,4 +1,4 @@
-// Typed client for the Session Monitor API. Types mirror server/app/schemas.py.
+// Typed client for the Kidputer Control API. Types mirror server/app/schemas.py.
 // The dashboard is served from the same origin as the API, so the session cookie is sent automatically.
 
 export interface Admin {
@@ -123,10 +123,10 @@ export class ApiError extends Error {
   }
 }
 
-export const UNAUTHORIZED_EVENT = "sm:unauthorized";
+export const UNAUTHORIZED_EVENT = "kc:unauthorized";
 
 // Required by the API on state-changing requests (CSRF defence; see server/app/deps.py).
-const CSRF_HEADER = "X-Session-Monitor";
+const CSRF_HEADER = "X-Kidputer-Control";
 
 function detailMessage(body: unknown, status: number): string {
   if (body && typeof body === "object" && "detail" in body) {

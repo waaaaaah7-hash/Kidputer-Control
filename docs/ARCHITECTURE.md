@@ -1,13 +1,18 @@
-# Session Monitor V2 — Architecture
+# Kidputer Control — Architecture
 
-This is the working design document for V2. The original handoff brief's goals and confirmed
-decisions still apply: FastAPI + Postgres, cloud-only remote admin, a PowerShell SYSTEM
-watchdog, fail-safe offline enforcement, and `LockWorkStation` only.
+This is the design document for Kidputer Control 1.0. Its core decisions:
+- FastAPI + Postgres in the cloud.
+- Remote admin only through the cloud dashboard.
+- A PowerShell SYSTEM watchdog on the PC.
+- Enforcement that keeps working offline.
+- Locking only through `LockWorkStation`.
 
-V1 was never deployed and its scripts were not carried into this repo. The agent is written
-fresh in its V2 shape, and it implements the V1 feature set: schedule, countdown, PIN with
-lockout, persistent overrides, closable and persistent messages, immediate lock, tamper
-detection, and logging. There is no `settings.json` to migrate.
+It grew out of an earlier local-only design that was never deployed. That design's feature set
+carries over: schedule, countdown, PIN with lockout, persistent overrides, closable and
+persistent messages, immediate lock, tamper detection, and logging. Nothing needs migrating.
+
+App and process management is planned for a future version. That is why the product is
+"Control" rather than a screen-time timer.
 
 ```
  Browser (dashboard) ──HTTPS, session cookie──▶ FastAPI ──▶ Postgres
@@ -23,8 +28,8 @@ detection, and logging. There is no `settings.json` to migrate.
 | Step | Status |
 |---|---|
 | 1. Postgres schema + FastAPI backend + auth | **Done** (`server/`) |
-| 2. Agent config and logs go through the API, with a local cache | **Done** (`agent/SessionMonitor/Modules/SessionMonitor.Common.psm1`) |
-| 3. SYSTEM watchdog + launching the UI into the child's session | **Done** (`agent/SessionMonitor/Watchdog.ps1`, `UiAgent.ps1`, `Install.ps1`). See the verification note below. |
+| 2. Agent config and logs go through the API, with a local cache | **Done** (`agent/KidputerControl/Modules/KidputerControl.Common.psm1`) |
+| 3. SYSTEM watchdog + launching the UI into the child's session | **Done** (`agent/KidputerControl/Watchdog.ps1`, `UiAgent.ps1`, `Install.ps1`). See the verification note below. |
 | 4. Web dashboard | **Done** (`web/`: React + TypeScript + Vite, served by FastAPI). Deploys to Render: see `docs/DEPLOY-RENDER.md`. |
 
 **Verification:**
@@ -46,7 +51,7 @@ detection, and logging. There is no `settings.json` to migrate.
 - **Passwords:** argon2id (`argon2-cffi`), at least 12 characters. There is no public sign-up.
   Admins are created with `python -m app.cli create-admin <email>`.
 - **2FA:** TOTP (`pyotp`), which works with any authenticator app. It is **mandatory** by default
-  (`SM_REQUIRE_TOTP=true`). An admin who has only entered a password can reach just the TOTP
+  (`KC_REQUIRE_TOTP=true`). An admin who has only entered a password can reach just the TOTP
   setup endpoints. A code can be off by one 30-second step, and each code works only once.
   `python -m app.cli reset-totp` is the recovery path.
 - **Sessions:** server-side session rows. The browser holds an opaque random token in an
@@ -54,7 +59,7 @@ detection, and logging. There is no `settings.json` to migrate.
   Login happens in two stages: the password creates an `mfa_pending` session that lasts 5 minutes
   and can do nothing else, then the TOTP code swaps it for an `active` session that lasts 12 hours.
 - **CSRF:** SameSite=Strict, and every state-changing admin call must carry an
-  `X-Session-Monitor` header. Browsers can't add that header cross-site without a CORS preflight,
+  `X-Kidputer-Control` header. Browsers can't add that header cross-site without a CORS preflight,
   and we only grant preflights to the dashboard's own origin.
 - **Brute force:** 5 failed password or TOTP attempts lock the account for 15 minutes. An unknown
   email and a wrong password give the same response and take the same time.
@@ -75,7 +80,7 @@ detection, and logging. There is no `settings.json` to migrate.
 ### Lock-screen PIN
 The PIN stays a secondary, local factor. The server hashes it with **PBKDF2-HMAC-SHA256** at
 200k iterations with a 16-byte salt and syncs the hash to the agent, so the agent can check it
-**offline**. The agent verifies it with .NET's `Rfc2898DeriveBytes` (see `Test-SmPin`).
+**offline**. The agent verifies it with .NET's `Rfc2898DeriveBytes` (see `Test-KcPin`).
 
 A 4–10 digit PIN is brute-forceable by anyone who can read the hash. So:
 - The hash exists only in the SYSTEM-only config folder.
@@ -86,16 +91,16 @@ A 4–10 digit PIN is brute-forceable by anyone who can read the hash. So:
 
 ## Data model (`server/app/models.py`)
 
-| V1 config concept | V2 table | Notes |
+| Concept | Table | Notes |
 |---|---|---|
 | schedule | `schedule_entries` | One row per weekday: `lock_at` → `unlock_at` in the device's IANA time zone. `unlock_at <= lock_at` means the window crosses midnight. A missing row means no lock that night. |
 | PIN | `device_settings.pin_*` | See above. |
 | other settings | `device_settings` | `enforcement_enabled`, `countdown_seconds` (default 300), `poll_interval_seconds`, PIN lockout, `pin_override_minutes` |
 | overrides | `overrides` | Absolute UTC windows. Stored persistently and cancelled with `cancelled_at`, never deleted. |
-| customMessage | `messages` | `persistent` or `closable`. A partial unique index allows at most one live message per device. `displayed_at`/`dismissed_at` come from agent events and `cleared_at` from the admin. |
-| immediateLock | `lock_requests` | At most one active per device. It **does not cancel** overrides: the agent applies it on top of them. It stays in force until an admin clears it or a parent enters the PIN at the lock screen. |
-| log files | `activity_events` | Central log for agent, admin, and system events. `(device_id, client_event_id)` is unique, so agent retries are idempotent. |
-| — | `devices`, `admin_users`, `admin_sessions` | New in V2. |
+| custom message | `messages` | `persistent` or `closable`. A partial unique index allows at most one live message per device. `displayed_at`/`dismissed_at` come from agent events and `cleared_at` from the admin. |
+| immediate lock | `lock_requests` | At most one active per device. It **does not cancel** overrides: the agent applies it on top of them. It stays in force until an admin clears it or a parent enters the PIN at the lock screen. |
+| activity log | `activity_events` | Central log for agent, admin, and system events. `(device_id, client_event_id)` is unique, so agent retries are idempotent. |
+| — | `devices`, `admin_users`, `admin_sessions` | Devices and dashboard accounts. |
 
 Migrations live in `server/migrations` (Alembic). CI runs `alembic check` to catch drift between
 the models and the migrations.
@@ -182,7 +187,7 @@ Any other `event_type` matching `^[a-z][a-z0-9_.]{0,63}$` is stored as is. The a
  └──────────────────────────────┘                    └───────────────────────────┘
 ```
 
-- **Hosting the watchdog:** a SYSTEM scheduled task (`\SessionMonitor\Watchdog`), not a Windows
+- **Hosting the watchdog:** a SYSTEM scheduled task (`\KidputerControl\Watchdog`), not a Windows
   Service. A Service has to be a binary that speaks the Service Control Manager protocol.
   `powershell.exe` can't be one without a wrapper (srvany/NSSM) or a compiled host, and either
   would break the "stays PowerShell" decision. The task is configured like this:
@@ -191,7 +196,7 @@ Any other `event_type` matching `^[a-z][a-z0-9_.]{0,63}$` is stored as is. The a
   - A `Global\` mutex that keeps it to one instance. Standard users lack
     `SeCreateGlobalPrivilege`, so they can't squat the mutex name.
   - Installed with `Register-ScheduledTask` and removed with `Unregister-ScheduledTask`.
-- **UI launch:** a small C# class (`SessionMonitor.Native.cs`, loaded with `Add-Type`) calls
+- **UI launch:** a small C# class (`KidputerControl.Native.cs`, loaded with `Add-Type`) calls
   `WTSQueryUserToken`, `CreateProcessAsUser`, and `winsta0\default`. The watchdog only launches
   the UI when the console session belongs to the configured child account, so parents' sessions
   are left alone.
@@ -214,12 +219,12 @@ Any other `event_type` matching `^[a-z][a-z0-9_.]{0,63}$` is stored as is. The a
   - The API sends a strict Content-Security-Policy for the app: `'self'` only, no inline scripts.
   - Its only runtime dependencies are React, React Router, and `qrcode` (for the 2FA QR code).
 - **First admin:** Render's free tier has no shell, so the first admin is created at start-up from
-  `SM_BOOTSTRAP_ADMIN_EMAIL`/`SM_BOOTSTRAP_ADMIN_PASSWORD`, and only while no admin exists.
+  `KC_BOOTSTRAP_ADMIN_EMAIL`/`KC_BOOTSTRAP_ADMIN_PASSWORD`, and only while no admin exists.
 
 ## Running locally
 
 ```bash
-SM_BOOTSTRAP_ADMIN_EMAIL=you@example.com SM_BOOTSTRAP_ADMIN_PASSWORD='a long local password' \
+KC_BOOTSTRAP_ADMIN_EMAIL=you@example.com KC_BOOTSTRAP_ADMIN_PASSWORD='a long local password' \
   docker compose up --build        # dashboard + API on http://localhost:8000, API docs at /docs
 ```
 
@@ -230,10 +235,10 @@ Running the tests needs a Postgres the tests can own:
 
 ```bash
 cd server && pip install -e ".[dev]"
-export SM_TEST_DATABASE_URL=postgresql+psycopg://sm:sm@localhost:5432/sessionmonitor_test
-pytest   # add SM_PWSH=<pwsh> for the agent integration test; build web/ + install playwright for the browser test
+export KC_TEST_DATABASE_URL=postgresql+psycopg://kc:kc@localhost:5432/kidputercontrol_test
+pytest   # add KC_PWSH=<pwsh> for the agent integration test; build web/ + install playwright for the browser test
 ```
 
-Configuration uses `SM_*` environment variables (see `server/app/config.py`). In production,
-set `SM_DATABASE_URL`, and set `SM_CORS_ORIGINS` only if the dashboard is served from a
+Configuration uses `KC_*` environment variables (see `server/app/config.py`). In production,
+set `KC_DATABASE_URL`, and set `KC_CORS_ORIGINS` only if the dashboard is served from a
 different origin.

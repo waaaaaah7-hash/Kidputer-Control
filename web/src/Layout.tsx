@@ -8,7 +8,7 @@ export default function Layout() {
       <header className="topbar">
         <NavLink to="/" className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          Session Monitor
+          Kidputer Control
         </NavLink>
         <nav aria-label="Main">
           <NavLink to="/" end>

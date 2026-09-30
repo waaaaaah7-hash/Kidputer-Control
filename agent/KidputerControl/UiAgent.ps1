@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Session Monitor UI agent: countdown notice, lock screen with PIN entry, and custom messages.
+    Kidputer Control UI agent: countdown notice, lock screen with PIN entry, and custom messages.
 
 .DESCRIPTION
     Launched by the SYSTEM watchdog into the child's session (CreateProcessAsUser) and relaunched within
@@ -11,18 +11,18 @@
 
     Locking is always LockWorkStation: reversible, no data loss.
 #>
-param([string]$DataRoot = (Join-Path $env:ProgramData 'SessionMonitor'))
+param([string]$DataRoot = (Join-Path $env:ProgramData 'KidputerControl'))
 
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'Modules\SessionMonitor.Common.psm1') -Force
-$paths = Initialize-SmPaths -DataRoot $DataRoot
+Import-Module (Join-Path $PSScriptRoot 'Modules\KidputerControl.Common.psm1') -Force
+$paths = Initialize-KcPaths -DataRoot $DataRoot
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-Add-Type -Namespace SmUi -Name User32 -MemberDefinition @'
+Add-Type -Namespace KcUi -Name User32 -MemberDefinition @'
 [DllImport("user32.dll", SetLastError = true)] public static extern bool LockWorkStation();
 [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 '@
-[void][SmUi.User32]::SetProcessDPIAware()
+[void][KcUi.User32]::SetProcessDPIAware()
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # How long the lock screen stays reachable (for PIN entry) after the child signs back in to Windows,
@@ -45,7 +45,7 @@ $muted = [System.Drawing.Color]::FromArgb(170, 180, 200)
 $accent = [System.Drawing.Color]::FromArgb(88, 166, 255)
 
 function Format-LocalTime($iso) {
-    $d = ConvertTo-SmDate $iso
+    $d = ConvertTo-KcDate $iso
     if ($null -eq $d) { return '' }
     $d.ToLocalTime().ToString('t')
 }
@@ -53,11 +53,11 @@ function Format-LocalTime($iso) {
 function Report-UiError([string]$Message) {
     if (([DateTime]::UtcNow - $script:lastErrorReport).TotalSeconds -lt 60) { return }
     $script:lastErrorReport = [DateTime]::UtcNow
-    try { [void](New-SmInboxRequest -Type 'ui_error' -Fields @{ message = $Message }) } catch { }
+    try { [void](New-KcInboxRequest -Type 'ui_error' -Fields @{ message = $Message }) } catch { }
 }
 
 function Invoke-Lock {
-    [void][SmUi.User32]::LockWorkStation()
+    [void][KcUi.User32]::LockWorkStation()
     $script:lastLockCall = [DateTime]::UtcNow
 }
 
@@ -159,7 +159,7 @@ $submitPin = {
     $pinBox.Text = ''
     if ($pin.Length -lt 4) { $pinStatus.Text = 'Enter the 4-10 digit PIN.'; return }
     try {
-        $script:pendingPin = New-SmInboxRequest -Type 'pin_attempt' -Fields @{ pin = $pin }
+        $script:pendingPin = New-KcInboxRequest -Type 'pin_attempt' -Fields @{ pin = $pin }
         $pinStatus.Text = 'Checking...'
         $pinButton.Enabled = $false
     } catch {
@@ -228,13 +228,13 @@ function Show-MessageForm($msg) {
     $f.Add_FormClosed({
             param($s, $e)
             try {
-                [void](New-SmInboxRequest -Type 'message_closed' -Fields @{ message_id = $script:messageId; reason = $script:messageCloseReason })
+                [void](New-KcInboxRequest -Type 'message_closed' -Fields @{ message_id = $script:messageId; reason = $script:messageCloseReason })
             } catch { Report-UiError "message_closed ack failed: $($_.Exception.Message)" }
             $script:messageForm = $null
             $script:messageId = $null
         })
     $f.Add_Shown({
-            try { [void](New-SmInboxRequest -Type 'message_displayed' -Fields @{ message_id = $script:messageId }) } catch { }
+            try { [void](New-KcInboxRequest -Type 'message_displayed' -Fields @{ message_id = $script:messageId }) } catch { }
         })
 
     $script:messageClosable = $closable
@@ -248,7 +248,7 @@ function Show-MessageForm($msg) {
 
 function Update-Ui {
     try {
-        $fresh = Read-SmJsonFile -Path $paths.UiState
+        $fresh = Read-KcJsonFile -Path $paths.UiState
         if ($null -ne $fresh) { $script:ui = $fresh }
     } catch { }   # mid-replace or briefly locked: keep the last good state (fail-safe: stay locked)
     $u = $script:ui
@@ -257,7 +257,7 @@ function Update-Ui {
 
     # Countdown
     if ($mode -eq 'countdown') {
-        $ends = ConvertTo-SmDate $u.countdown_ends_at
+        $ends = ConvertTo-KcDate $u.countdown_ends_at
         $left = [Math]::Max(0, [int][Math]::Ceiling(($ends - [DateTimeOffset]::UtcNow).TotalSeconds))
         $countdownText.Text = 'This PC locks in {0}:{1:00}' -f [int][Math]::Floor($left / 60), ($left % 60)
         if (-not $countdownForm.Visible) {
@@ -280,7 +280,7 @@ function Update-Ui {
         }
         $lockSubtitle.Text = $text
 
-        $pinLockedUntil = ConvertTo-SmDate $u.pin_locked_until
+        $pinLockedUntil = ConvertTo-KcDate $u.pin_locked_until
         $pinBlocked = $null -ne $pinLockedUntil -and [DateTimeOffset]::UtcNow -lt $pinLockedUntil
         $pinEnabled = [bool]$u.pin_enabled
         $pinLabel.Visible = $pinEnabled

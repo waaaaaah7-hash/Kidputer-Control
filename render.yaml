@@ -2,7 +2,7 @@
 # Creates the web service (dashboard + API, one Docker image) and a Postgres database.
 services:
   - type: web
-    name: session-monitor
+    name: kidputer-control
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -11,20 +11,20 @@ services:
     plan: starter
     healthCheckPath: /healthz
     envVars:
-      - key: SM_DATABASE_URL
+      - key: KC_DATABASE_URL
         fromDatabase:
-          name: session-monitor-db
+          name: kidputer-control-db
           property: connectionString
       # First admin, created at startup only while no admin exists. Set both in the Render
-      # dashboard when prompted, sign in, then delete SM_BOOTSTRAP_ADMIN_PASSWORD.
-      - key: SM_BOOTSTRAP_ADMIN_EMAIL
+      # dashboard when prompted, sign in, then delete KC_BOOTSTRAP_ADMIN_PASSWORD.
+      - key: KC_BOOTSTRAP_ADMIN_EMAIL
         sync: false
-      - key: SM_BOOTSTRAP_ADMIN_PASSWORD
+      - key: KC_BOOTSTRAP_ADMIN_PASSWORD
         sync: false
 
 databases:
-  - name: session-monitor-db
-    databaseName: sessionmonitor
+  - name: kidputer-control-db
+    databaseName: kidputercontrol
     # Paid plan: Render's free Postgres expires after 30 days.
     plan: basic-256mb
     ipAllowList: []   # reachable only from Render services in this account

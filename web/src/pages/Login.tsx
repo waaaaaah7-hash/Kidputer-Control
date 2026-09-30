@@ -49,7 +49,7 @@ export default function Login() {
     <main className="auth-page">
       <form className="card auth-card" onSubmit={submit}>
         <div className="brand-mark" aria-hidden="true" />
-        <h1>Session Monitor</h1>
+        <h1>Kidputer Control</h1>
         {step === "password" ? (
           <>
             <p className="muted">Sign in to manage your family's PCs.</p>

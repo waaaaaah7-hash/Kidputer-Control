@@ -99,10 +99,10 @@ def test_agent_cannot_touch_other_devices_rows(admin_client, agent):
 
 
 def test_heartbeat_updates_status(admin_client, agent):
-    r = agent.post("/api/v1/agent/heartbeat", json={"agent_version": "2.0.1", "status": {"locked": True, "ui_agent_alive": True}})
+    r = agent.post("/api/v1/agent/heartbeat", json={"agent_version": "1.0.1", "status": {"locked": True, "ui_agent_alive": True}})
     assert r.status_code == 204
     d = admin_client.get(f"/api/v1/devices/{agent.device_id}").json()
-    assert d["enrolled"] is True and d["agent_version"] == "2.0.1" and d["last_status"]["locked"] is True
+    assert d["enrolled"] is True and d["agent_version"] == "1.0.1" and d["last_status"]["locked"] is True
 
 
 def test_reissuing_enrollment_code_revokes_token(admin_client, agent):

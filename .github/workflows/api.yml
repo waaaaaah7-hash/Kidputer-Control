@@ -13,17 +13,17 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: sm
-          POSTGRES_PASSWORD: sm
-          POSTGRES_DB: sessionmonitor_test
+          POSTGRES_USER: kc
+          POSTGRES_PASSWORD: kc
+          POSTGRES_DB: kidputercontrol_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U sm" --health-interval 2s --health-retries 15
+          --health-cmd "pg_isready -U kc" --health-interval 2s --health-retries 15
     defaults:
       run:
         working-directory: server
     env:
-      SM_TEST_DATABASE_URL: postgresql+psycopg://sm:sm@localhost:5432/sessionmonitor_test
+      KC_TEST_DATABASE_URL: postgresql+psycopg://kc:kc@localhost:5432/kidputercontrol_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,7 +40,7 @@ jobs:
         run: npm ci && npm run build
       - run: python -m playwright install --with-deps chromium
       - name: Migrations match models
-        run: SM_DATABASE_URL=$SM_TEST_DATABASE_URL alembic upgrade head && SM_DATABASE_URL=$SM_TEST_DATABASE_URL alembic check
+        run: KC_DATABASE_URL=$KC_TEST_DATABASE_URL alembic upgrade head && KC_DATABASE_URL=$KC_TEST_DATABASE_URL alembic check
       # Includes the agent<->API integration test (pwsh is preinstalled on ubuntu-latest)
       # and the dashboard end-to-end test in Chromium.
       - run: pytest -q

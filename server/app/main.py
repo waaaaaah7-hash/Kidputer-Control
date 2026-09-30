@@ -20,7 +20,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Session Monitor API", version="2.0.0-dev", lifespan=lifespan)
+app = FastAPI(title="Kidputer Control API", version="1.0.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 if _origins:

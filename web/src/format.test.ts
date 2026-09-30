@@ -10,7 +10,7 @@ function device(overrides: Partial<Device> = {}): Device {
     timezone: "UTC",
     enrolled: true,
     hostname: "KID-PC",
-    agent_version: "2.0.0",
+    agent_version: "1.0.0",
     last_seen_at: "2026-01-12T21:59:40Z",
     last_status: { mode: "none", reason: "none" },
     created_at: "2026-01-01T00:00:00Z",

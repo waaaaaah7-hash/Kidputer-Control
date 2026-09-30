@@ -1,18 +1,18 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Install (or upgrade) the Session Monitor agent on the child's PC. Run from an elevated PowerShell.
+    Install (or upgrade) the Kidputer Control agent on the child's PC. Run from an elevated PowerShell.
 
 .DESCRIPTION
-    1. Copies the agent to %ProgramFiles%\SessionMonitor (Users: read/execute only).
-    2. Creates %ProgramData%\SessionMonitor with locked-down ACLs:
+    1. Copies the agent to %ProgramFiles%\KidputerControl (Users: read/execute only).
+    2. Creates %ProgramData%\KidputerControl with locked-down ACLs:
          config\, logs\   SYSTEM + Administrators only (device token, cached state, PIN hash, event queue)
          ipc\             SYSTEM writes, Users read (what the lock screen should show)
          ipc\inbox\       Users may only drop files in (PIN attempts, message acks), not list or read them
     3. Enrolls with the cloud API using the one-time code from the dashboard and stores the device
        token (DPAPI, machine scope).
     4. Records a SHA-256 manifest of the installed files for tamper detection.
-    5. Registers the SYSTEM watchdog scheduled task (\SessionMonitor\Watchdog) and starts it.
+    5. Registers the SYSTEM watchdog scheduled task (\KidputerControl\Watchdog) and starts it.
 
 .EXAMPLE
     .\Install.ps1 -ApiUrl https://monitor.example.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
@@ -40,18 +40,18 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Run this script from an elevated (Run as administrator) PowerShell.'
 }
 
-$source = Join-Path $PSScriptRoot 'SessionMonitor'
-$installRoot = Join-Path $env:ProgramFiles 'SessionMonitor'
-$dataRoot = Join-Path $env:ProgramData 'SessionMonitor'
-$taskPath = '\SessionMonitor\'
+$source = Join-Path $PSScriptRoot 'KidputerControl'
+$installRoot = Join-Path $env:ProgramFiles 'KidputerControl'
+$dataRoot = Join-Path $env:ProgramData 'KidputerControl'
+$taskPath = '\KidputerControl\'
 $taskName = 'Watchdog'
 
-Import-Module (Join-Path $source 'Modules\SessionMonitor.Common.psm1') -Force
-$paths = Initialize-SmPaths -DataRoot $dataRoot
+Import-Module (Join-Path $source 'Modules\KidputerControl.Common.psm1') -Force
+$paths = Initialize-KcPaths -DataRoot $dataRoot
 
 # --- Inputs ----------------------------------------------------------------------------------------------------
 $existing = $null
-try { $existing = Read-SmJsonFile -Path $paths.AgentFile } catch { }
+try { $existing = Read-KcJsonFile -Path $paths.AgentFile } catch { }
 $isUpgrade = ($null -ne $existing) -and [IO.File]::Exists($paths.TokenFile) -and -not $EnrollmentCode
 
 if (-not $isUpgrade) {
@@ -132,30 +132,30 @@ Set-IcaclsAcl $paths.Inbox @("${SYSTEM}:(OI)(CI)F", "${ADMINS}:(OI)(CI)F", "${US
 # --- Enrollment -------------------------------------------------------------------------------------------------------
 if (-not $isUpgrade) {
     Write-Host "Enrolling with $ApiUrl"
-    $enrolled = Invoke-SmEnroll -BaseUrl $ApiUrl -EnrollmentCode $EnrollmentCode
-    Save-SmDeviceToken -Token ([string]$enrolled.device_token)
+    $enrolled = Invoke-KcEnroll -BaseUrl $ApiUrl -EnrollmentCode $EnrollmentCode
+    Save-KcDeviceToken -Token ([string]$enrolled.device_token)
     $deviceId = [string]$enrolled.device_id
     # A fresh enrollment starts from clean state.
     foreach ($f in $paths.StateFile, $paths.LocalFile, $paths.QueueFile) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 } else {
     $deviceId = [string]$existing.device_id
 }
-Write-SmJsonFile -Path $paths.AgentFile -Object ([ordered]@{
+Write-KcJsonFile -Path $paths.AgentFile -Object ([ordered]@{
         api_url        = $ApiUrl
         device_id      = $deviceId
         child_user_sid = $childSid
-        agent_version  = (Get-SmAgentVersion)
-        installed_at   = (ConvertTo-SmIso (Get-SmNow))
+        agent_version  = (Get-KcAgentVersion)
+        installed_at   = (ConvertTo-KcIso (Get-KcNow))
     })
 
 # Fetch the configuration now so enforcement is ready before the first watchdog sync.
 try {
-    $r = Sync-SmState -BaseUrl $ApiUrl -Token (Get-SmDeviceToken) -CachedState $null
+    $r = Sync-KcState -BaseUrl $ApiUrl -Token (Get-KcDeviceToken) -CachedState $null
     if ($r.Changed) { Write-Host "Configuration received for '$($r.State.name)'." } else { Write-Host 'Could not fetch configuration yet; the watchdog will retry.' }
 } catch { Write-Host "Could not fetch configuration yet ($($_.Exception.Message)); the watchdog will retry." }
 
-Write-SmJsonFile -Path $paths.Manifest -Object ([ordered]@{ created_at = (ConvertTo-SmIso (Get-SmNow)); files = (Get-SmFileHashes -InstallRoot $installRoot) })
-Add-SmEvent -Type 'agent.installed' -Message "Agent $(Get-SmAgentVersion) installed (upgrade: $isUpgrade) for account SID $childSid"
+Write-KcJsonFile -Path $paths.Manifest -Object ([ordered]@{ created_at = (ConvertTo-KcIso (Get-KcNow)); files = (Get-KcFileHashes -InstallRoot $installRoot) })
+Add-KcEvent -Type 'agent.installed' -Message "Agent $(Get-KcAgentVersion) installed (upgrade: $isUpgrade) for account SID $childSid"
 
 # --- Scheduled task -------------------------------------------------------------------------------------------------------
 $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -170,12 +170,12 @@ $taskPrincipal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType Servic
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -Hidden
 Register-ScheduledTask -TaskPath $taskPath -TaskName $taskName -Action $action -Trigger $triggers -Principal $taskPrincipal -Settings $settings `
-    -Description 'Session Monitor watchdog: enforces the screen-time schedule. Removal requires an administrator.' -Force | Out-Null
+    -Description 'Kidputer Control watchdog: enforces the screen-time schedule. Removal requires an administrator.' -Force | Out-Null
 Enable-ScheduledTask -TaskPath $taskPath -TaskName $taskName | Out-Null
 Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
 Write-Host ''
-Write-Host 'Session Monitor is installed and running.' -ForegroundColor Green
+Write-Host 'Kidputer Control is installed and running.' -ForegroundColor Green
 Write-Host "  Device:   $deviceId"
 Write-Host "  Enforced: $ChildUser ($childSid)"
 Write-Host '  Set the schedule and lock-screen PIN from the dashboard.'
