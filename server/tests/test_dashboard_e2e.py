@@ -82,11 +82,16 @@ def assert_fits_screen(page) -> None:
     assert not too_wide, f"content overflows on phone: {too_wide}"
 
 
-def shot(page, name: str) -> None:
+def shot(page, name: str, locator=None) -> None:
+    """Save a screenshot of the page, or of just one element."""
     out = os.environ.get("KC_E2E_SCREENSHOTS")
     if out:
         Path(out).mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(Path(out) / f"{name}.png"), full_page=True)
+        path = str(Path(out) / f"{name}.png")
+        if locator is None:
+            page.screenshot(path=path, full_page=True)
+        else:
+            locator.screenshot(path=path)
 
 
 def expect(locator):
@@ -325,6 +330,7 @@ def test_second_parent_invite_and_removal(page, live_app):
     page.get_by_label("Your name").fill("Alex")
     page.get_by_role("button", name="Save", exact=True).click()
     expect(page.locator(".topbar-user")).to_contain_text("Alex")
+    expect(page.get_by_test_id("parent-list")).to_contain_text("Alex")
 
     page.get_by_label("Email of the parent to invite").fill("partner@example.com")
     page.get_by_role("button", name="Invite a parent").click()
@@ -361,6 +367,7 @@ def test_second_parent_invite_and_removal(page, live_app):
     expect(page.get_by_test_id("parent-list")).to_contain_text("Sam")
     expect(page.get_by_test_id("parent-list")).to_contain_text("partner@example.com")
     expect(page.get_by_test_id("invite-list")).to_have_count(0)
+    shot(page, "parents", page.locator(".card", has=page.get_by_test_id("parent-list")))
     page.set_viewport_size({"width": 390, "height": 844})
     assert_fits_screen(page)
     shot(page, "22-parents-phone")

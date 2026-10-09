@@ -32,15 +32,19 @@ or send an on-screen message. Everything that happens is recorded in one central
   - Risky changes, such as deleting a PC or changing its PIN, still ask you to **confirm it's
     you**.
   - The Account page lists every **signed-in device** and lets you sign any of them out.
+  - Repeated failed sign-ins lock the account temporarily.
 - **Several parents:** each parent has their own sign-in. Invite another parent from the Account
   page with a one-time link, remove a parent there too, and see who did what in the activity log.
-  - Repeated failed sign-ins lock the account temporarily.
 - **Reversible:** locking always uses the Windows lock (`LockWorkStation`). Nothing is ever shut
   down, so no work is lost.
 
 | Device page | On a phone |
 |---|---|
 | ![Device page](docs/screenshots/device-page.png) | ![Phone view](docs/screenshots/phone.png) |
+
+The Parents section of the Account page:
+
+![Parents section of the Account page](docs/screenshots/parents.png)
 
 ## How it fits together
 
@@ -68,7 +72,7 @@ or send an on-screen message. Everything that happens is recorded in one central
 
 | Path | What |
 |---|---|
-| `server/` | FastAPI + Postgres API: schema and migrations, dashboard sign-in (password + TOTP), device management, and the agent sync protocol |
+| `server/` | FastAPI + Postgres API: schema and migrations, dashboard sign-in (password + TOTP, passkeys), parent accounts and invites, device management, and the agent sync protocol |
 | `web/` | Parent dashboard: React + TypeScript (Vite) |
 | `agent/` | Windows agent: SYSTEM watchdog, UI agent, installer and uninstaller, tests |
 | `Dockerfile`, `render.yaml` | Single-image build and Render Blueprint (web service + Postgres) |
@@ -92,6 +96,9 @@ or send an on-screen message. Everything that happens is recorded in one central
    with `Install.ps1` is also possible; see [agent/README.md](agent/README.md).
 5. Set the **schedule** and a **lock-screen PIN** on the device's page. Then walk through the
    first-run checklist in [agent/README.md](agent/README.md) once.
+6. **Optional, add the other parent:** under **Account → Parents**, enter their email and send
+   them the one-time link. They choose their own password and set up their own two-factor
+   sign-in.
 
 **Running locally:**
 
@@ -106,9 +113,9 @@ For dashboard development with hot reload, run `cd web && npm install && npm run
 
 | Suite | What it covers |
 |---|---|
-| `server/tests` (pytest, real Postgres) | API, auth and 2FA, lockouts, the agent protocol, UTC lock windows, serving the dashboard |
+| `server/tests` (pytest, real Postgres) | API, auth and 2FA, passkeys (with a software authenticator), remembered devices, parent invites and removal, lockouts, the agent protocol, UTC lock windows, serving the dashboard |
 | `server/tests/test_agent_integration.py` | The agent's PowerShell code against a live API (enroll, sync, events, PIN unlock) |
-| `server/tests/test_dashboard_e2e.py` | The whole parent journey in Chromium, including a phone-width layout check |
+| `server/tests/test_dashboard_e2e.py` | The whole parent journey in Chromium: passkeys with a virtual authenticator, inviting and removing a second parent, and a phone-width layout check |
 | `web` (Vitest) | Status, time, and schedule helpers |
 | `agent/tests` | Decision logic, countdown, PIN lockout, queue, inbox, tamper check, script parsing, interop compile |
 
@@ -147,6 +154,7 @@ The full plan, with effort, feasibility and practicality for each feature, is in
   - **Who did what:** activity entries show the parent's name instead of just "Parent".
   - **Your name:** set the name the other parents see, on the Account page.
   - Inviting and removing parents ask you to confirm it's you, like other risky changes.
+  - Adding a second parent no longer needs the Render Shell.
 
 - **Passkeys and remembered devices:**
   - **Passkeys:** sign in with Face ID, a fingerprint, or Windows Hello. A passkey counts as

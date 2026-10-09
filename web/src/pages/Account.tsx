@@ -67,7 +67,9 @@ function YourNameCard() {
 }
 
 function ParentsCard() {
-  const parents = useLoader(() => api.parents(), []);
+  const { admin } = useAuth();
+  // Reload when your own name changes, so your row shows it.
+  const parents = useLoader(() => api.parents(), [admin?.name]);
   const invites = useLoader(() => api.invites(), []);
   const [email, setEmail] = useState("");
   const [link, setLink] = useState<{ email: string; url: string } | null>(null);
