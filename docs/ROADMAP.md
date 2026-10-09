@@ -33,6 +33,7 @@ practicality.
 | 16 | Managed and Trusted modes, chosen in the installer | Requested | S | High | High |
 | 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
+| 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
 
 ## Release plan
 
@@ -40,7 +41,7 @@ practicality.
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
 | **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). |
-| **1.2** | Change monitoring (#17), built on the same process monitoring as #1. App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
+| **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
@@ -310,3 +311,61 @@ silently, without a window:
 | Anything else (custom installers with a window) | "Install it in person": the parent types their password at Windows' own prompt | High; less convenient |
 
 Every request and approval is recorded in the activity log.
+
+## 19. Drives, file explorer, and folder-size analysis — L
+
+A **Files** tab on the device page. It shows **names, sizes, and dates only**: opening, previewing,
+or downloading files is deliberately out of scope, for privacy, and because it would turn the
+dashboard into a way to pull any file off the PC.
+
+**What the parent sees**
+- **Drives:** every drive (internal, USB stick, external disk, SD card, network drive) with size and
+  free space, plus connected devices such as phones, by name.
+- **Explorer:** click through folders. Each folder shows its **total size**, its file count, and
+  when it last changed. Folders sort by size, with a bar for each one's share of its parent, as in
+  TreeSize.
+- **Largest files:** the 100 biggest files on the drive.
+- **By type:** space used by videos, games and programs, archives, pictures, and so on.
+- **What changed** since the previous scan, for example "Downloads grew 12 GB since last Sunday".
+  This also feeds change monitoring (#17).
+- **USB alert with a summary**, for example "USB drive 'SANDISK 32GB' connected: 3 programs, 2 zip
+  files, 1.2 GB". This builds on #17.
+
+**How it works**
+
+Scanning:
+- Folder totals require scanning every file, because Windows doesn't store a folder's total size.
+- PowerShell's built-in file listing could take 10+ minutes for a whole drive. A small C# helper
+  using Windows' fast file-listing calls (loaded with `Add-Type`, like the session launcher) should
+  take roughly one to a few minutes.
+- Reading the drive's internal file table directly, as TreeSize does, is faster but much more
+  complex. It's only worth doing if scans prove too slow.
+- Scans run as a separate background process at low priority, so games don't stutter and the
+  watchdog keeps enforcing. The dashboard shows progress.
+- Scans run on demand ("Scan now") and on a schedule, for example nightly or weekly while the PC is
+  idle. The latest results stay viewable while the PC is off.
+
+Accuracy (the same pitfalls TreeSize handles):
+- Folder links (junctions) aren't followed, so nothing is counted twice and nothing loops.
+- OneDrive online-only files are marked as not using disk space.
+- Both "size" and "size on disk" are recorded.
+- Unreadable system folders show as "not accessible" rather than silently missing.
+
+Upload and browsing:
+- Each scan sends the folder tree with totals, plus the largest files: a few hundred KB compressed,
+  not a list of every file.
+- Opening a folder fetches its files live. A "live session" makes the PC check in every second or
+  two while the parent is browsing, shared with #2.
+
+Scope and limits:
+- Whole drives are covered, including Program Files and Steam libraries where games live.
+- Encrypted (BitLocker) USB sticks can't be read until they're unlocked.
+- Phones connected by USB are listed by name only. Browsing their contents is unreliable through
+  Windows, especially for iPhones, so it's not planned.
+
+| Part | Effort | Feasibility | Practicality |
+|---|---|---|---|
+| Drive and device list, USB alert with a summary | S | High | High |
+| File explorer (live folder browsing; names, sizes, dates) | M | High | High |
+| Fast scanning engine (C#, background, low priority, scheduled) | M | High | High |
+| Size view (sortable tree, largest files, by type, what changed) | M | High | High: finding big games, stashed downloads, or a full disk |
