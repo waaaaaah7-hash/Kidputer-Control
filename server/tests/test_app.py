@@ -44,6 +44,8 @@ def spa_client(tmp_path, monkeypatch):
     (tmp_path / "index.html").write_text("<html>shell</html>")
     (tmp_path / "assets" / "app.js").write_text("console.log(1)")
     (tmp_path / "favicon.svg").write_text("<svg/>")
+    (tmp_path / "sw.js").write_text("self.addEventListener('push', () => {})")
+    (tmp_path / "manifest.webmanifest").write_text('{"name": "Kidputer Control"}')
     monkeypatch.setenv("KC_STATIC_DIR", str(tmp_path))
     from app import config, main
 
@@ -65,3 +67,9 @@ def test_spa_is_served_with_client_side_routes(spa_client):
     assert "shell" in spa_client.get("/../../etc/passwd").text
     assert spa_client.get("/api/v1/nope").status_code == 404
     assert spa_client.get("/healthz").json() == {"status": "ok"}
+
+
+def test_phone_app_files_are_served_with_the_right_types(spa_client):
+    sw = spa_client.get("/sw.js")
+    assert "javascript" in sw.headers["content-type"] and sw.headers["cache-control"] == "no-cache"
+    assert spa_client.get("/manifest.webmanifest").headers["content-type"].startswith("application/manifest+json")

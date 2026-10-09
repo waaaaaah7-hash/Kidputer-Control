@@ -391,6 +391,10 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
             <input type="number" min={1} max={1440} {...num("pin_lockout_minutes")} />
           </label>
           <label>
+            Alert me if the PC goes silent for (minutes, 0 = never)
+            <input type="number" min={0} max={1440} {...num("silent_alert_minutes")} />
+          </label>
+          <label>
             Check for changes every (seconds)
             <input type="number" min={5} max={3600} {...num("poll_interval_seconds")} />
           </label>

@@ -29,6 +29,46 @@ export interface Invite {
   expires_at: string;
 }
 
+export type NotificationLevel = "immediate" | "digest" | "off";
+
+export interface NotificationCategory {
+  id: string;
+  label: string;
+  description: string;
+  default: NotificationLevel;
+}
+
+export interface NotificationSettings {
+  email_enabled: boolean;
+  push_enabled: boolean;
+  levels: Record<string, NotificationLevel>;
+  quiet_start: string | null;
+  quiet_end: string | null;
+  timezone: string;
+  digest_hour: number;
+  categories: NotificationCategory[];
+  email_available: boolean;
+  email_address: string;
+  push_devices: number;
+  vapid_public_key: string;
+}
+
+export type NotificationSettingsIn = Pick<
+  NotificationSettings,
+  "email_enabled" | "push_enabled" | "levels" | "quiet_start" | "quiet_end" | "timezone" | "digest_hour"
+>;
+
+export interface SentNotification {
+  id: number;
+  category: string;
+  level: "immediate" | "digest";
+  title: string;
+  body: string;
+  url: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
 export interface InviteInfo {
   email: string;
   invited_by: string | null;
@@ -128,6 +168,7 @@ export interface DeviceSettings {
   pin_max_attempts: number;
   pin_lockout_minutes: number;
   pin_override_minutes: number;
+  silent_alert_minutes: number;
   updated_at: string;
 }
 
@@ -339,6 +380,14 @@ export const api = {
   lookupInvite: (token: string) => request<InviteInfo>("POST", "/invites/lookup", { token }),
   acceptInvite: (token: string, display_name: string, password: string) =>
     request<Admin>("POST", "/invites/accept", { token, display_name, password }),
+
+  notificationSettings: () => request<NotificationSettings>("GET", "/notifications/settings"),
+  saveNotificationSettings: (body: NotificationSettingsIn) => request<NotificationSettings>("PUT", "/notifications/settings", body),
+  subscribePush: (body: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    request<void>("POST", "/notifications/push-subscriptions", body),
+  unsubscribePush: (endpoint: string) => request<void>("POST", "/notifications/push-subscriptions/remove", { endpoint }),
+  testNotification: () => request<{ email: boolean; push: number; email_error: string | null }>("POST", "/notifications/test"),
+  recentNotifications: () => request<SentNotification[]>("GET", "/notifications?limit=30"),
 
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),

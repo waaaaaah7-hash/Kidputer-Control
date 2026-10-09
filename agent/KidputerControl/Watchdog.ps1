@@ -35,6 +35,7 @@ if (-not $createdNew) {
 }
 
 Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $InstallRoot 'Modules\KidputerControl.Native.cs')))
+try { [KcShutdownWatcher]::Start() } catch { Write-KcLog -Level warning -Message "Shutdown watcher unavailable: $($_.Exception.Message)" }
 
 $agentCfg = Read-KcJsonFile -Path $paths.AgentFile
 if ($null -eq $agentCfg) { Write-KcLog -Level error -Message 'agent.json missing; reinstall required'; exit 1 }
@@ -56,6 +57,7 @@ $ui = @{ Pid = 0; StartTime = $null; SessionId = [KcNative]::NoSession; Launches
 $sync = @{ Phase = 'state'; NextAt = [DateTimeOffset]::MinValue; Failures = 0; LastOkAt = $null; Offline = $true; Unauthorized = $false; SkewReportedAt = [DateTimeOffset]::MinValue; SkewSeconds = $null }
 $tamper = @{ NextAt = [DateTimeOffset]::MinValue; Problems = @() }
 $adminCheck = @{ NextAt = [DateTimeOffset]::MinValue; IsAdmin = $false }
+$power = @{ LastTick = $null; ShutdownReported = $false }
 $lastMode = $null
 $lastUiJson = $null
 $pinResult = $null
@@ -344,9 +346,38 @@ function Update-Enforcement {
     }
 }
 
+# --- Power: shutdown and sleep -------------------------------------------------------------------------------------
+
+function Update-PowerEvents {
+    <#
+        Tell the server why the PC is about to go quiet, so parents get "turned off" rather than a
+        "PC went silent" alarm. Shutdown: flush the event right away (Windows gives us a few seconds).
+        Sleep: the loop simply stops; a long gap between ticks means the PC was asleep.
+    #>
+    $now = Get-KcNow
+    if ($power.LastTick -and ($now - $power.LastTick).TotalSeconds -gt 60) {
+        Add-KcEvent -Type 'pc.resumed' -Message "PC woke up (asleep since $(ConvertTo-KcIso $power.LastTick))" -Data @{ asleep_from = (ConvertTo-KcIso $power.LastTick) }
+        $sync.Phase = 'events'
+        $sync.NextAt = $now
+    }
+    $power.LastTick = $now
+    $ending = $false
+    try { $ending = [KcShutdownWatcher]::Ending } catch { }
+    if ($ending -and -not $power.ShutdownReported) {
+        $power.ShutdownReported = $true
+        Add-KcEvent -Type 'pc.shutting_down' -Message 'Windows is shutting down or restarting'
+        if ($token -and $apiUrl) { [void](Send-KcQueuedEvents -BaseUrl $apiUrl -Token $token -MaxBatches 1) }
+    }
+}
+
+function Get-KcBootTime {
+    try { return ConvertTo-KcIso ([DateTimeOffset](Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime) } catch { return $null }
+}
+
 # --- Main loop -------------------------------------------------------------------------------------------------------
 
-Add-KcEvent -Type 'agent.started' -Message "Watchdog $(Get-KcAgentVersion) started on $([Environment]::MachineName)"
+# boot_time lets the server tell "the PC was off" from "Kidputer Control was stopped while Windows ran".
+Add-KcEvent -Type 'agent.started' -Message "Watchdog $(Get-KcAgentVersion) started on $([Environment]::MachineName)" -Data @{ boot_time = (Get-KcBootTime) }
 if ($null -eq $token) { Add-KcEvent -Type 'agent.unauthorized' -Severity critical -Message 'No device token; enforcing from cache only' }
 Update-ChildAdminStatus
 # In Trusted mode an administrator child is expected; in Managed mode it's a hole in enforcement.
@@ -356,6 +387,7 @@ if ($adminCheck.IsAdmin -and (Get-KcProp $state 'mode' 'managed') -ne 'trusted')
 
 while ($true) {
     try {
+        Update-PowerEvents
         Invoke-Inbox -Decision $script:currentDecision
         Update-Enforcement
         if ($script:localDirty) { Save-Local; $script:localDirty = $false }

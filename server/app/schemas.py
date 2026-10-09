@@ -251,6 +251,7 @@ class SettingsIn(BaseModel):
     pin_max_attempts: int | None = Field(default=None, ge=1, le=20)
     pin_lockout_minutes: int | None = Field(default=None, ge=1, le=1440)
     pin_override_minutes: int | None = Field(default=None, ge=1, le=1440)
+    silent_alert_minutes: int | None = Field(default=None, ge=0, le=1440)
 
 
 class SettingsOut(BaseModel):
@@ -263,6 +264,7 @@ class SettingsOut(BaseModel):
     pin_max_attempts: int
     pin_lockout_minutes: int
     pin_override_minutes: int
+    silent_alert_minutes: int
     updated_at: datetime
 
 

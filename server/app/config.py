@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,6 +61,31 @@ class Settings(BaseSettings):
 
     # Allowed browser origins for the dashboard (comma separated)
     cors_origins: str = ""
+
+    # Parent notifications by email, through any SMTP service (Gmail with an app password, Resend,
+    # Postmark, ...). Email is off while smtp_host is empty; push notifications need no setup.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    # "starttls" (port 587), "ssl" (port 465) or "none".
+    smtp_security: str = "starttls"
+
+    # Background jobs: "PC went silent" checks, sending notifications, daily digests. Tests turn this
+    # off and run the jobs directly.
+    background_jobs: bool = True
+
+    # Render sets RENDER_EXTERNAL_URL; used for links in notifications when public_url is empty.
+    render_external_url: str = Field(default="", validation_alias="RENDER_EXTERNAL_URL")
+
+    @property
+    def dashboard_url(self) -> str:
+        return (self.public_url or self.render_external_url).rstrip("/")
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from)
 
     @field_validator("database_url")
     @classmethod

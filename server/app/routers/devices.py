@@ -68,6 +68,7 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         pin_max_attempts=s.pin_max_attempts,
         pin_lockout_minutes=s.pin_lockout_minutes,
         pin_override_minutes=s.pin_override_minutes,
+        silent_alert_minutes=s.silent_alert_minutes,
         updated_at=s.updated_at,
     )
 

@@ -67,6 +67,27 @@ Passkeys belong to the domain they were added on. After switching domains, sign 
 password and code, then add your passkeys again from the Account page. Remembered devices also
 need re-ticking on the new domain.
 
+## Email notifications (optional)
+
+Push notifications to your phone work without any setup: open **Account → Notification settings**
+and tap **Turn on for this device**. On an iPhone, first add the dashboard to the Home Screen
+(Share → Add to Home Screen) and open it from there.
+
+For email alerts and the daily summary, connect an email service. Any service that offers SMTP
+works, for example Resend, Postmark, Brevo, or Gmail with an
+[app password](https://support.google.com/accounts/answer/185833). In the Render service's
+**Environment**, add:
+
+| Variable | Example |
+|---|---|
+| `KC_SMTP_HOST` | `smtp.gmail.com` |
+| `KC_SMTP_PORT` | `587` |
+| `KC_SMTP_USERNAME` | `you@gmail.com` |
+| `KC_SMTP_PASSWORD` | the app password or API key |
+| `KC_SMTP_FROM` | `Kidputer Control <you@gmail.com>` |
+
+Save; Render restarts the service. Then use **Send a test** on the Notification settings page.
+
 ## Operations
 
 - **Logs:** use the service's Logs tab in Render. The central activity log is in the dashboard
@@ -95,4 +116,6 @@ All settings are environment variables. Defaults are in `server/app/config.py`.
 | `KC_INVITE_TTL_HOURS` | `48` | How long a parent invite link stays valid |
 | `KC_STATIC_DIR` | `/srv/static` in the image | Built dashboard |
 | `KC_AGENT_DIR` | `/srv/agent` in the image | Agent files bundled into installer downloads |
+| `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_USERNAME`, `KC_SMTP_PASSWORD`, `KC_SMTP_FROM` | empty, `587` | Email notifications (above). Email is off while the host is empty. |
+| `KC_SMTP_SECURITY` | `starttls` | `starttls` (port 587), `ssl` (port 465), or `none` |
 | `KC_PUBLIC_URL` | empty | Address written into installer downloads. Leave empty to use the address the dashboard was opened on; set it if you use a custom domain and want installers and invite links to use it. |

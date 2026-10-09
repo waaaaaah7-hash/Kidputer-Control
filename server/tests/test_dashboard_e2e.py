@@ -384,3 +384,38 @@ def test_second_parent_invite_and_removal(page, live_app):
     partner.reload()
     expect(partner).to_have_url(re.compile(r"/login$"))
     partner_ctx.close()
+
+
+def sign_in_ui(page, secret: str, email: str = "parent@example.com") -> None:
+    page.goto("/login")
+    page.get_by_label("Email").fill(email)
+    page.get_by_label("Password").fill(PASSWORD)
+    page.get_by_role("button", name="Continue").click()
+    page.get_by_label("Authentication code").fill(pyotp.TOTP(secret).now())
+    page.get_by_role("button", name="Verify").click()
+    expect(page.get_by_role("heading", name="Devices")).to_be_visible()
+
+
+def test_notification_settings(page, live_app):
+    _, secret = make_admin()
+    sign_in_ui(page, secret)
+    # The dashboard installs as a phone app: manifest and service worker are in place.
+    assert page.evaluate("document.querySelector('link[rel=manifest]').href").endswith("/manifest.webmanifest")
+    page.wait_for_function("navigator.serviceWorker.getRegistration().then(r => !!r)")
+
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Account").click()
+    page.get_by_role("link", name="Notification settings").click()
+    expect(page.get_by_role("heading", name="Notifications")).to_be_visible()
+    expect(page.get_by_text("Email isn't set up on the server yet")).to_be_visible()
+    page.get_by_label("USB drives").select_option("immediate")
+    page.get_by_label("Quiet hours").check()
+    page.get_by_role("button", name="Save notification settings").click()
+    expect(page.get_by_text("Notification settings saved")).to_be_visible()
+    shot(page, "30-notifications")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_fits_screen(page)
+    shot(page, "31-notifications-phone")
+
+    page.reload()
+    expect(page.get_by_label("USB drives")).to_have_value("immediate")
+    expect(page.get_by_label("From")).to_have_value("22:00")

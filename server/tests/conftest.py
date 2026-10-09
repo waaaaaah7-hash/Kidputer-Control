@@ -14,6 +14,7 @@ import pytest
 TEST_DB = os.environ.get("KC_TEST_DATABASE_URL", "postgresql+psycopg://kc:kc@localhost:5432/kidputercontrol_test")
 os.environ["KC_DATABASE_URL"] = TEST_DB
 os.environ["KC_COOKIE_SECURE"] = "false"  # TestClient talks plain http
+os.environ["KC_BACKGROUND_JOBS"] = "false"  # tests run the jobs themselves
 
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402

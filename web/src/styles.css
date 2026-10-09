@@ -227,3 +227,4 @@ details[open] > summary { margin-bottom: 0.6rem; }
   .event { flex-direction: column; gap: 0.1rem; }
   .event-meta { text-align: left; }
 }
+.level-select { width: auto; flex: none; }

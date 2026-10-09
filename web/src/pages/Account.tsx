@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, type Parent, type Passkey } from "../api";
 import { useAuth } from "../auth";
 import { UserCancelled } from "../cancel";
@@ -16,6 +17,12 @@ export default function Account() {
       </div>
       <div className="columns">
         <div className="stack">
+          <Card title="Notifications">
+            <p className="muted small">Get told about tamper alerts, new apps, requests for more time, and the PC going silent, by email or on your phone.</p>
+            <Link to="/account/notifications" className="btn btn-secondary">
+              Notification settings
+            </Link>
+          </Card>
           <YourNameCard />
           <PasskeysCard />
           <Card title="Two-factor sign-in">

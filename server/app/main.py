@@ -1,3 +1,4 @@
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,15 +10,20 @@ from fastapi.staticfiles import StaticFiles
 from .bootstrap import bootstrap_admin
 from .config import get_settings
 from .deps import CSRF_HEADER
-from .routers import agent, auth, devices, parents, passkeys
+from .jobs import start_background_jobs
+from .routers import agent, auth, devices, notifications, parents, passkeys
 
 settings = get_settings()
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     bootstrap_admin(settings)
+    stop = start_background_jobs(settings) if settings.background_jobs else None
     yield
+    if stop is not None:
+        stop.set()
 
 
 app = FastAPI(title="Kidputer Control API", version="1.0.0", lifespan=lifespan)
@@ -59,6 +65,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(passkeys.router, prefix="/api/v1")
 app.include_router(parents.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")
 
 
@@ -78,6 +85,8 @@ if (_static / "index.html").is_file():
             return JSONResponse({"detail": "Not Found"}, status_code=404)
         candidate = (_static_root / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(_static_root):
-            return FileResponse(candidate)
+            # The service worker must update promptly when the dashboard changes.
+            headers = {"Cache-Control": "no-cache"} if path == "sw.js" else None
+            return FileResponse(candidate, headers=headers)
         # Client-side routes (/devices/..., /login) all load the app shell.
         return FileResponse(_static_root / "index.html", headers={"Cache-Control": "no-cache"})

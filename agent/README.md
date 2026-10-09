@@ -136,6 +136,12 @@ a short schedule window, or an immediate lock, set from the dashboard.
 10. **Tamper:** as an administrator, edit a file under `%ProgramFiles%\KidputerControl`. Within a
     minute a critical `tamper.detected` event appears. Re-run `Install.ps1` to restore the files.
 11. **Parent account:** sign in as the parent. No countdown or lock screen appears.
+12. **Shutdown and silence:** shut the PC down normally. The dashboard log shows "PC shutting
+    down", and 15 minutes later "PC turned off" rather than a "PC went silent" alert. Turn it back
+    on: "PC back online" appears. (If "PC went silent" appears instead, the shutdown signal didn't
+    reach the server in time; that's a false alarm, not a fault.)
+13. **Sleep:** put the PC to sleep for a few minutes and wake it. The log shows "PC woke from
+    sleep".
 
 ## Tests
 

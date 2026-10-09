@@ -24,7 +24,7 @@ practicality.
 | 7 | Weekly reports (email) | Original roadmap | M | High | Medium |
 | 8 | Bonus time (time bank) | Original roadmap | S | High | Low: extra time already covers most of it |
 | 9 | "Ask for more time" button on the lock screen | Suggested | M | High | High |
-| 10 | Parent notifications (email and push), including "PC went silent" | Requested | M | High | Essential in Trusted mode |
+| 10 | Parent notifications (email and push), including "PC went silent" **(done)** | Requested | M | High | Essential in Trusted mode |
 | 11 | Schedule templates and holidays | Suggested | S | High | Medium |
 | 12 | One-click installer download from the dashboard **(done)** | Suggested | S | High | Medium |
 | 13 | Agent auto-update | Suggested | M | Medium | High, once #1–4 ship |
@@ -173,7 +173,7 @@ PC):
 - It cuts down on negotiation and gives the child a sanctioned way to ask.
 - Depends on #10.
 
-## 10. Parent notifications — M
+## 10. Parent notifications — M — done
 
 **Channels**
 - **Email** through a provider such as Postmark or Resend. Free tiers usually cover a household.
