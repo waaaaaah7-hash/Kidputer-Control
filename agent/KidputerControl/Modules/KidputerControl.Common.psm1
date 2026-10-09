@@ -10,7 +10,7 @@
 
 Set-StrictMode -Version 3.0
 
-$script:AgentVersion = '1.0.0'
+$script:AgentVersion = '1.1.0'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 $script:Paths = $null
 $script:Http = $null

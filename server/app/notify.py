@@ -40,22 +40,24 @@ class Category:
     description: str
     default: str
     plural: str  # "3 {plural}" in a grouped alert
+    # False until the feature that produces these events ships (they're hidden from the settings page).
+    ready: bool = True
 
 
 CATEGORIES: tuple[Category, ...] = (
     Category("silent", "PC went silent", "The PC stopped checking in: it may be off or offline, or Kidputer Control was stopped.", "immediate", "silence alerts"),
     Category("tamper", "Tamper alerts", "Kidputer Control's files changed, it was uninstalled or stopped, or the child's account became an administrator.", "immediate", "tamper alerts"),
-    Category("time_requests", "Requests for more time", "Your child asked for more time from the lock screen.", "immediate", "time requests"),
-    Category("install_requests", "App install requests", "Your child asked to install an app.", "immediate", "install requests"),
-    Category("installs", "Apps installed or removed", "Programs installed or uninstalled on the PC.", "immediate", "app changes"),
-    Category("first_run", "New programs run", "A program ran for the first time, for example a game from a zip file.", "immediate", "new programs"),
-    Category("vpn", "VPN and remote-access apps", "A VPN or remote-control app (NordVPN, AnyDesk, TeamViewer, ...) appeared.", "immediate", "VPN or remote-access apps"),
-    Category("accounts", "Windows accounts", "A Windows account was created or deleted, or someone became an administrator.", "immediate", "account changes"),
-    Category("defender", "Windows Defender", "Virus protection was switched off or back on.", "immediate", "Defender changes"),
-    Category("blocked_apps", "Blocked apps", "Your child tried to open an app outside its allowed times.", "digest", "blocked apps"),
-    Category("limits", "Daily limits", "A daily screen-time or app limit ran out.", "digest", "limits reached"),
-    Category("archives", "Zip and archive files", "New zip, rar or 7z files, or archives being opened.", "digest", "archive files"),
-    Category("usb", "USB drives", "A USB stick or external drive was connected.", "digest", "USB drives"),
+    Category("time_requests", "Requests for more time", "Your child asked for more time from the lock screen.", "immediate", "time requests", ready=False),
+    Category("install_requests", "App install requests", "Your child asked to install an app.", "immediate", "install requests", ready=False),
+    Category("installs", "Apps installed or removed", "Programs installed or uninstalled on the PC.", "immediate", "app changes", ready=False),
+    Category("first_run", "New programs run", "A program ran for the first time, for example a game from a zip file.", "immediate", "new programs", ready=False),
+    Category("vpn", "VPN and remote-access apps", "A VPN or remote-control app (NordVPN, AnyDesk, TeamViewer, ...) appeared.", "immediate", "VPN or remote-access apps", ready=False),
+    Category("accounts", "Windows accounts", "A Windows account was created or deleted, or someone became an administrator.", "immediate", "account changes", ready=False),
+    Category("defender", "Windows Defender", "Virus protection was switched off or back on.", "immediate", "Defender changes", ready=False),
+    Category("blocked_apps", "Blocked apps", "Your child tried to open an app outside its allowed times.", "digest", "blocked apps", ready=False),
+    Category("limits", "Daily limits", "A daily screen-time or app limit ran out.", "digest", "limits reached", ready=False),
+    Category("archives", "Zip and archive files", "New zip, rar or 7z files, or archives being opened.", "digest", "archive files", ready=False),
+    Category("usb", "USB drives", "A USB stick or external drive was connected.", "digest", "USB drives", ready=False),
     Category("pin", "Wrong lock-screen PINs", "PIN entry locked after too many wrong attempts.", "digest", "PIN lockouts"),
     Category("power", "PC turned off or back online", "The PC was shut down, or came back after being offline.", "off", "power changes"),
 )

@@ -108,7 +108,7 @@ def _out(db, settings, user: AdminUser) -> NotificationSettingsOut:
         quiet_end=ns.quiet_end,
         timezone=ns.timezone,
         digest_hour=ns.digest_hour,
-        categories=[CategoryOut(id=c.id, label=c.label, description=c.description, default=c.default) for c in notify.CATEGORIES],
+        categories=[CategoryOut(id=c.id, label=c.label, description=c.description, default=c.default) for c in notify.CATEGORIES if c.ready],
         email_available=settings.email_configured,
         email_address=user.email,
         push_devices=devices,

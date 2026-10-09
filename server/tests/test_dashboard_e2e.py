@@ -407,7 +407,7 @@ def test_notification_settings(page, live_app):
     page.get_by_role("link", name="Notification settings").click()
     expect(page.get_by_role("heading", name="Notifications")).to_be_visible()
     expect(page.get_by_text("Email isn't set up on the server yet")).to_be_visible()
-    page.get_by_label("USB drives").select_option("immediate")
+    page.get_by_label("Wrong lock-screen PINs").select_option("immediate")
     page.get_by_label("Quiet hours").check()
     page.get_by_role("button", name="Save notification settings").click()
     expect(page.get_by_text("Notification settings saved")).to_be_visible()
@@ -417,7 +417,7 @@ def test_notification_settings(page, live_app):
     shot(page, "31-notifications-phone")
 
     page.reload()
-    expect(page.get_by_label("USB drives")).to_have_value("immediate")
+    expect(page.get_by_label("Wrong lock-screen PINs")).to_have_value("immediate")
     expect(page.get_by_label("From")).to_have_value("22:00")
 
 
@@ -430,7 +430,7 @@ def make_enrolled_device(base_url: str, name: str = "Sam's PC") -> httpx.Client:
 
     token = new_token()
     with SessionLocal() as db:
-        d = Device(name=name, timezone="Europe/London", token_hash=token_hash(token), enrolled_at=utcnow(), hostname="SAM-PC", last_seen_at=utcnow())
+        d = Device(name=name, timezone="Europe/London", token_hash=token_hash(token), enrolled_at=utcnow(), hostname="SAM-PC", agent_version="1.1.0", last_seen_at=utcnow())
         d.settings = DeviceSettings()
         db.add(d)
         db.commit()

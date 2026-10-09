@@ -1,6 +1,6 @@
 # Kidputer Control — Roadmap
 
-This is the plan after version 1.0.0. It includes the features already on record (app and process
+This is the plan after version 1.0.0. Version 1.1.0 is built (everything in the 1.1 row below). It includes the features already on record (app and process
 management, usage quotas, weekly reports, bonus time), the Managed and Trusted modes with change
 notifications, and further suggestions. Each one is rated for effort, feasibility, and
 practicality.
@@ -27,7 +27,7 @@ practicality.
 | 10 | Parent notifications (email and push), including "PC went silent" **(done)** | Requested | M | High | Essential in Trusted mode |
 | 11 | Schedule templates and holidays | Suggested | S | High | Medium |
 | 12 | One-click installer download from the dashboard **(done)** | Suggested | S | High | Medium |
-| 13 | Agent auto-update | Suggested | M | Medium | High, once #1–4 ship |
+| 13 | Agent auto-update **(done)** | Suggested | M | Medium | High, once #1–4 ship |
 | 14 | Several children on one PC | Suggested | M | High | Depends on the household |
 | 15 | Web/site filtering | Often expected | L | Low | Better handled outside the app |
 | 16 | Managed and Trusted modes, chosen in the installer **(done)** | Requested | S | High | High |
@@ -43,7 +43,7 @@ practicality.
 | Version | Contents |
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
-| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
+| **1.1 (done)** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
 | **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
@@ -210,7 +210,7 @@ PC):
 - Built: double-click the launcher, approve the Windows permission prompt, and pick the child's
   account from a list. See `agent/README.md`.
 
-## 13. Agent auto-update — M
+## 13. Agent auto-update — M — done
 
 - Today, every agent change means re-running the installer on the PC.
 - App control will change more often than bedtime enforcement does, so this becomes important

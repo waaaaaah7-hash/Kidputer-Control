@@ -21,6 +21,16 @@ EMAIL_SETTINGS = Settings(smtp_host="smtp.test", smtp_from="kc@example.com", pub
 N = "/api/v1/notifications"
 
 
+SEND_DIGESTS = notify.send_digests
+
+
+@pytest.fixture(autouse=True)
+def no_digests(monkeypatch):
+    """Daily summaries go out at a clock hour, so they'd make other tests depend on the time of day.
+    Only the digest test turns them back on."""
+    monkeypatch.setattr(notify, "send_digests", lambda db, settings, now: 0)
+
+
 @pytest.fixture
 def outbox(monkeypatch):
     sent: list[dict] = []
@@ -135,7 +145,8 @@ def test_quiet_hours_hold_alerts_until_they_end(admin_client, agent, outbox):
     assert len(outbox) == 1
 
 
-def test_daily_digest_at_the_chosen_hour(admin_client, agent, outbox):
+def test_daily_digest_at_the_chosen_hour(admin_client, agent, outbox, monkeypatch):
+    monkeypatch.setattr(notify, "send_digests", SEND_DIGESTS)
     no_silence_alerts(admin_client, agent)
     admin_client.get(f"{N}/settings")
     with SessionLocal() as db:
@@ -322,3 +333,8 @@ def test_recent_notifications_list(admin_client, agent):
     post(agent, ev("tamper.detected", "files changed"))
     items = admin_client.get(N).json()
     assert [(i["category"], i["body"]) for i in items] == [("tamper", "files changed")]
+
+
+def test_settings_page_only_offers_alerts_that_exist_yet(admin_client):
+    shown = [c["id"] for c in admin_client.get(f"{N}/settings").json()["categories"]]
+    assert shown == ["silent", "tamper", "pin", "power"]

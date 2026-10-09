@@ -31,6 +31,7 @@ App and process management is planned for a future version. That is why the prod
 | 2. Agent config and logs go through the API, with a local cache | **Done** (`agent/KidputerControl/Modules/KidputerControl.Common.psm1`) |
 | 3. SYSTEM watchdog + launching the UI into the child's session | **Done** (`agent/KidputerControl/Watchdog.ps1`, `UiAgent.ps1`, `Install.ps1`). See the verification note below. |
 | 4. Web dashboard | **Done** (`web/`: React + TypeScript + Vite, served by FastAPI). Deploys to Render: see `docs/DEPLOY-RENDER.md`. |
+| 1.1: modes, notifications, running apps, auto-update | **Done**. See the sections below. |
 
 **Verification:**
 - The API has full test coverage against Postgres.
@@ -41,7 +42,8 @@ App and process management is planned for a future version. That is why the prod
 - Every script parses, and the Win32 interop compiles.
 - CI runs the agent tests on Windows under both PowerShell 5.1 and 7.
 - **Not yet exercised on a real PC:** the parts that need an interactive Windows session. These
-  are the WinForms screens, `CreateProcessAsUser`, the scheduled task, and the folder ACLs.
+  are the WinForms screens, `CreateProcessAsUser`, the scheduled task, the folder ACLs, closing
+  apps, the shutdown listener, and swapping in an update.
   Before relying on the agent, walk through the checklist in `agent/README.md` once on the actual
   PC.
 
@@ -146,6 +148,9 @@ A 4–10 digit PIN is brute-forceable by anyone who can read the hash. So:
 | activity log | `activity_events` | Central log for agent, admin, and system events. `(device_id, client_event_id)` is unique, so agent retries are idempotent. |
 | — | `devices`, `admin_users`, `admin_sessions` | Devices and dashboard accounts. A removed parent keeps their `admin_users` row with `disabled_at` set. |
 | parent invites | `admin_invites` | One-time sign-up links: token hash, expiry, accepted or cancelled time. |
+| notifications | `notification_settings`, `push_subscriptions`, `notifications`, `app_secrets` | Each parent's levels, quiet hours and digest time; their phones and browsers; the send queue (kept 30 days); the Web Push key. |
+| commands and reports | `device_commands`, `device_reports` | Parent-to-PC commands with their results; the latest bulk report per kind. |
+| — | `devices.mode`, `.silent_since`, `.last_silence_started`, `.live_until`; `device_settings.silent_alert_minutes`, `.show_window_titles`, `.auto_update` | Modes, "PC went silent", live mode, and per-PC options. |
 
 Migrations live in `server/migrations` (Alembic). CI runs `alembic check` to catch drift between
 the models and the migrations.
@@ -159,7 +164,10 @@ All endpoints are under `/api/v1/agent`. Every call except `enroll` needs the de
 | `POST /enroll` `{enrollment_code, hostname, agent_version}` | → `{device_id, device_token}` |
 | `GET /state` (send `If-None-Match`) | Full desired-state snapshot, or `304`. The `ETag` is a hash of the snapshot. `X-Server-Time` lets the agent detect clock skew. |
 | `POST /events` `{events:[…≤500]}` | Flush the local event queue. Returns `{accepted, duplicates}`. Safe to retry. |
-| `POST /heartbeat` `{agent_version, status:{…}}` | Free-form live status shown in the dashboard, for example `locked` or `ui_agent_alive`. |
+| `POST /heartbeat` `{agent_version, status:{…}}` | Free-form live status shown in the dashboard, for example `locked`, `ui_agent_alive`, `child_is_admin` or `agent_bundle`. |
+| `POST /reports/{kind}` | The latest copy of a bulk report (`processes`). Size-capped per kind. |
+| `POST /commands/{id}/result` `{status, result}` | Outcome of a dashboard command. Retries are ignored once recorded. |
+| `GET /update/manifest`, `GET /update/file?path=` | Auto-update: the agent files this server ships, with SHA-256s, and each file. |
 
 Snapshot shape:
 
@@ -174,7 +182,11 @@ Snapshot shape:
           "max_attempts": 5, "lockout_minutes": 15, "override_minutes": 60},
   "overrides": [{"id": "…", "starts_at": "…Z", "ends_at": "…Z"}],
   "message": {"id": "…", "body": "…", "mode": "persistent"} ,
-  "immediate_lock": {"id": "…", "reason": "…", "requested_at": "…"}
+  "immediate_lock": {"id": "…", "reason": "…", "requested_at": "…"},
+  "mode": "managed", "show_window_titles": false,
+  "live_until": "…" ,
+  "commands": [{"id": "…", "kind": "stop_app", "payload": {"path": "…", "name": "Minecraft", "grace_seconds": 60}}],
+  "agent_update": {"version": "1.1.0", "bundle": "<sha256 fingerprint>"}
 }
 ```
 
@@ -218,6 +230,72 @@ Any other `event_type` matching `^[a-z][a-z0-9_.]{0,63}$` is stored as is. The a
 - **Messages:** `message.close_blocked`
 - **UI agent:** `ui_agent.restarted`, `ui_agent.error`
 - **Integrity:** `tamper.detected` (critical), `tamper.resolved`, `clock.skew`
+- **Power:** `pc.shutting_down`, `pc.resumed`; `agent.started` carries `boot_time`
+- **Apps:** `app.stop_warning`, `app.stopped`
+- **Updates:** `agent.updated`, `agent.update_failed`
+
+The server adds its own `system` events: `device.silent`, `device.offline`, `device.back_online`,
+and `device.agent_was_stopped`.
+
+## Commands, reports and live mode
+
+- **Commands** (`device_commands`) are things a parent asks the PC to do. Pending ones ride in the
+  state snapshot, so they reach the PC however it reaches the server. The agent carries each out
+  once (handled ids survive restarts) and posts the result, retrying until it's recorded.
+- **Reports** (`device_reports`) hold the latest bulk data from the PC, one row per kind.
+- **Live mode:** a page showing live data pings `POST /devices/{id}/live` every 20 seconds. The
+  snapshot's `live_until` (rounded to 30 s so the ETag stays stable) puts the agent on a 3-second
+  poll. It also polls fast while any command is pending.
+
+**Running apps (#1) and closing them (#2):** the watchdog lists processes in the child's session
+(path via `QueryFullProcessImageName`, friendly names from the file's version info) and reports
+them every 5 s while live, every 10 minutes otherwise. Window titles are only included when the
+parent turns them on. A `stop_app` command shows the child a countdown (default 60 s); then the
+UI agent, which can reach windows in the child's session, asks the app to close so it can save,
+and the watchdog force-closes whatever is still running 5 s later. Processes under the Windows
+folder, Windows' own process names, and Kidputer Control's files can never be closed.
+
+## Notifications (#10)
+
+- **Queue:** agent and system events map to a category (`server/app/notify.py`). Each parent has a
+  level per category (immediate, daily digest, off) and gets a `notifications` row.
+- **Sending:** a background thread (`server/app/jobs.py`, every 30 s, guarded by a Postgres
+  advisory lock) sends immediate items grouped per parent, PC and category: it waits 20 s to
+  gather a burst, and 5 minutes when that group alerted in the last 10. Quiet hours hold items
+  until they end. Digests go out once a day at each parent's hour.
+- **Channels:** email over SMTP (`KC_SMTP_*`; off when unset) and Web Push with VAPID (RFC 8292).
+  The signing key is generated once and kept in `app_secrets`. Push payloads are end-to-end
+  encrypted for the browser. Gone subscriptions (404/410) are deleted. The dashboard is a PWA
+  (`manifest.webmanifest`, `sw.js`), which iPhones need for push.
+- **"PC went silent":** the job flags enrolled PCs that haven't checked in for
+  `silent_alert_minutes` (default 15, 0 = off). If the agent's last event before going quiet was
+  `pc.shutting_down` (sent by a hidden-window listener for Windows' shutdown message), it's a
+  quiet `device.offline` instead. On return, `device.back_online` is logged, and if the restarted
+  agent's `boot_time` is before the silence began, Windows was running while Kidputer Control
+  wasn't: a critical `device.agent_was_stopped`. A watchdog that was only asleep reports
+  `pc.resumed` instead, which clears it.
+
+## Managed and Trusted modes (#16)
+
+`devices.mode` is `managed` (standard child account) or `trusted` (administrator child account).
+The installer download carries the mode: Managed refuses an administrator account, Trusted
+accepts one. The watchdog reports `child_is_admin` every 10 minutes and only raises the critical
+`agent.child_is_admin` event in Managed mode. Trusted mode relies on notifications, above all
+"PC went silent", which an administrator child can't suppress from the PC.
+
+## Agent auto-update (#13)
+
+- **What's offered:** the agent folder inside the server's deployed image (`KC_AGENT_DIR`). There's
+  no API to upload agent code, so a stolen parent password can't push code to a PC. The bundle
+  fingerprint is a SHA-256 over sorted `path:sha256` lines (`server/app/agent_bundle.py`, mirrored
+  by `Get-KcBundleFingerprint`; a shared test vector keeps them identical).
+- **When:** the snapshot's `agent_update.bundle` differs from the installed files' fingerprint, and
+  auto-update is on for the PC (default). At most one attempt an hour.
+- **How:** download the manifest, check it is the expected bundle, download each file into the
+  SYSTEM-only `config\update` folder and check its hash, back up the current files, copy the new
+  ones over (never leaving an empty folder), remove files no longer shipped, check the result,
+  and roll back on any failure. Then rewrite the tamper manifest, log `agent.updated`, and
+  restart through the scheduled task.
 
 ## Agent design (`agent/`)
 
@@ -251,7 +329,11 @@ Any other `event_type` matching `^[a-z][a-z0-9_.]{0,63}$` is stored as is. The a
   - In `ipc\inbox\` the child can create files but can't list or read them.
   - Everything in the inbox is treated as untrusted input: size-capped, validated, then deleted.
 - **Sync pacing:** at most one HTTP call per 1-second tick, with a 10-second timeout. A slow
-  network can't delay relaunching the UI for long.
+  network can't delay relaunching the UI for long. The cycle is state → events → reports and
+  command results → heartbeat.
+- **Modules:** `KidputerControl.Common.psm1` (decision, PIN, queue, HTTP, installer helpers),
+  `KidputerControl.Apps.psm1` (process lists, which processes may be closed), and
+  `KidputerControl.Update.psm1` (fingerprints, verified download, install with rollback).
 
 ## Hosting and dashboard
 

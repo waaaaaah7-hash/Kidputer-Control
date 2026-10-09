@@ -129,7 +129,7 @@ function LevelsCard({ form, setForm }: FormProps) {
   return (
     <Card title="What to tell you">
       <p className="muted small">
-        <strong>Right away</strong> sends an alert within a minute; repeats are grouped, so 50 zip files make one alert, not 50.{" "}
+        <strong>Right away</strong> sends an alert within a minute; a burst of the same alert is grouped into one.{" "}
         <strong>Daily summary</strong> collects them into one message a day.
       </p>
       <ul className="list" data-testid="notification-levels">

@@ -149,12 +149,18 @@ a short schedule window, or an immediate lock, set from the dashboard.
     "<app> closes in 1:00" bottom-right. When it reaches zero the app is asked to close (it can
     still offer to save) and is force-closed 5 seconds later if it's still open. The dashboard
     shows "Closed". Try **Close right away** too.
+16. **Auto-update:** after deploying a server with changed agent files, the PC updates at its
+    next check-in (a failed attempt is retried after an hour). The log shows "Kidputer Control updated from ... to ...",
+    the device page shows the new agent version, and no tamper alert follows. Turning
+    auto-update off on the device page stops this.
 
 ## Tests
 
 ```powershell
 .\tests\Parse.Tests.ps1     # every script parses; the Win32 interop compiles
-.\tests\Common.Tests.ps1    # decision logic, countdown, PIN and lockout, queue, inbox, tamper
+.\tests\Common.Tests.ps1    # decision logic, countdown, PIN and lockout, queue, inbox, tamper, install modes
+.\tests\Apps.Tests.ps1      # running apps: which processes may be closed, the process report
+.\tests\Update.Tests.ps1    # auto-update: fingerprints, install, rollback
 ```
 
 Both run on Windows PowerShell 5.1 and on PowerShell 7 (Windows CI runs both).
