@@ -34,18 +34,21 @@ practicality.
 | 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
 | 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
+| 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello | Requested | M | High | High |
+| 21 | Remember this device, with a signed-in devices page and re-checks for risky actions | Requested | S | High | High |
 
 ## Release plan
 
 | Version | Contents |
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
-| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). |
+| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21). |
 | **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
-#10 together with #16 is the most valuable early step whichever mode is chosen, so it moves up to
+#20 and #21 change only the server and dashboard, not the PC agent, so they can ship ahead of the
+rest of 1.1 if wanted. #10 together with #16 is the most valuable early step whichever mode is chosen, so it moves up to
 1.1. #17 shares the process-start monitoring with #1, and #18 carries the most security risk, so it
 comes last.
 
@@ -369,3 +372,59 @@ Scope and limits:
 | File explorer (live folder browsing; names, sizes, dates) | M | High | High |
 | Fast scanning engine (C#, background, low priority, scheduled) | M | High | High |
 | Size view (sortable tree, largest files, by type, what changed) | M | High | High: finding big games, stashed downloads, or a full disk |
+
+## 20. Passkeys — M
+
+Sign in to the dashboard with Face ID, a fingerprint, or Windows Hello instead of a password and
+6-digit code. Passkeys are built into phones and browsers (iCloud Keychain, Google Password Manager,
+Windows Hello, and password managers such as 1Password).
+
+**Why a passkey counts as multi-factor on its own**
+- **Something you have:** a cryptographic key stored on the phone or computer. It never leaves the
+  device and can't be typed into a fake website.
+- **Something you are or know:** using the key requires the fingerprint, face, or device PIN.
+- NIST treats passkeys used this way as multi-factor, including passkeys that sync between devices.
+
+**Requirements**
+- **User verification must be required.** The server must reject any passkey sign-in that skipped
+  the fingerprint, face, or PIN step. Without it, a passkey is only a single factor.
+- **The password plus authenticator code stays as a backup**, for a lost phone or a switch between
+  phone ecosystems.
+- Several passkeys per account (for example, phone and laptop), each named and removable from the
+  Account page.
+
+**Benefits over the current sign-in**
+- It can't be phished. A fake site can capture a 6-digit code and replay it within its 30-second
+  window, but a passkey only works on the real site's address.
+- Faster: one tap and a glance or touch.
+
+**Caveat:** synced passkeys are only as secure as the Apple or Google account that syncs them, so
+that account should have its own 2FA turned on.
+
+**Implementation:** WebAuthn, the standard behind passkeys, via a maintained library (for example
+`webauthn` for Python) and the browser's built-in passkey support. It needs a new table for
+registered passkeys and two sign-in endpoints (start and finish).
+
+## 21. Remember this device — S
+
+Today a sign-in lasts a fixed 12 hours, and the authenticator code is asked at every sign-in.
+
+**Remember this device**
+- A "Remember this device for 30 days" checkbox at sign-in.
+- On a remembered phone or browser, the authenticator code is skipped. The password is still
+  needed when a session ends, unless passkeys (#20) are used.
+- Optionally, sessions extend while in use instead of ending after a fixed 12 hours.
+
+**Safeguards, built as part of this item**
+
+The dashboard can unlock the child's PC, so anyone holding the parent's unlocked phone could do so
+too. Two safeguards keep long sign-ins safe:
+- **Signed-in devices page:** every active sign-in and remembered device, with browser, approximate
+  location (from the IP address), and last use. Any of them can be signed out, for example a lost
+  phone.
+- **Re-check for risky actions:** even on a remembered device, ask for Face ID / fingerprint (#20) or
+  the authenticator code before deleting a PC, changing the lock-screen PIN, downloading an
+  installer, or approving an install request (#18).
+
+**Implementation:** a long-lived, revocable "remembered device" token (stored only as a hash, like
+sessions today), plus a recent-verification timestamp on each session for the re-checks.
