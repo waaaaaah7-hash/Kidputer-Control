@@ -5,6 +5,7 @@ enforces from that cache — so enforcement keeps working offline. Everything it
 local queue that is flushed to POST /agent/events; client_event_id makes retries idempotent.
 """
 
+import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Any
@@ -16,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_admin, log_system
 from ..deps import DbDep, DeviceDep, utcnow
-from ..models import ActivityEvent, Device, LockRequest, Message, Override
+from ..commands import save_report
+from ..models import ActivityEvent, Device, DeviceCommand, LockRequest, Message, Override
 from ..notify import queue_for_event
-from ..schemas import AgentEventIn, AgentEventsIn, AgentEventsOut, EnrollRequest, EnrollResponse, HeartbeatIn
+from ..schemas import AgentEventIn, AgentEventsIn, AgentEventsOut, CommandResultIn, EnrollRequest, EnrollResponse, HeartbeatIn
 from ..security import new_token, normalize_enrollment_code, token_hash
 from ..state import build_state, state_etag
 
@@ -202,3 +204,42 @@ def heartbeat(body: HeartbeatIn, request: Request, db: DbDep, device: DeviceDep)
     _touch(db, device, request)
     db.commit()
 
+
+
+# What the PC may upload in bulk, and how big each may be. Later features add their kinds here.
+REPORT_LIMITS: dict[str, int] = {
+    "processes": 512 * 1024,
+}
+
+
+@router.post("/reports/{kind}", status_code=status.HTTP_204_NO_CONTENT)
+async def post_report(kind: str, request: Request, db: DbDep, device: DeviceDep) -> None:
+    """Store the latest copy of a bulk report (the running processes, a drive scan, ...)."""
+    limit = REPORT_LIMITS.get(kind)
+    if limit is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown report kind")
+    raw = await request.body()
+    if len(raw) > limit:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "report too large")
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "report must be JSON") from exc
+    if not isinstance(data, dict):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "report must be a JSON object")
+    save_report(db, device, kind, data, utcnow())
+    _touch(db, device, request)
+    db.commit()
+
+
+@router.post("/commands/{command_id}/result", status_code=status.HTTP_204_NO_CONTENT)
+def post_command_result(command_id: uuid.UUID, body: CommandResultIn, request: Request, db: DbDep, device: DeviceDep) -> None:
+    cmd = db.get(DeviceCommand, command_id, with_for_update=True)
+    if cmd is None or cmd.device_id != device.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "command not found")
+    if cmd.status == "pending":  # retries of an already-recorded result are ignored
+        cmd.status = body.status
+        cmd.result = body.result
+        cmd.completed_at = utcnow()
+    _touch(db, device, request)
+    db.commit()

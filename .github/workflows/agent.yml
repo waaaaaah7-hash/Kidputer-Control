@@ -22,7 +22,12 @@ jobs:
       - name: Parse all scripts and compile the native interop
         run: ./agent/tests/Parse.Tests.ps1
       - name: Unit tests
-        run: ./agent/tests/Common.Tests.ps1
+        run: |
+          foreach ($t in Get-ChildItem ./agent/tests/*.Tests.ps1 -Exclude Parse.Tests.ps1, Integration.Tests.ps1) {
+            Write-Host "== $($t.Name)"
+            & $t.FullName
+            if ($LASTEXITCODE) { exit 1 }
+          }
       - name: WinForms types load (UI agent dependencies)
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing

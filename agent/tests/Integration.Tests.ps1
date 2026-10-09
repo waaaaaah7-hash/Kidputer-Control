@@ -6,6 +6,7 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 Import-Module (Join-Path $PSScriptRoot '..\KidputerControl\Modules\KidputerControl.Common.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '..\KidputerControl\Modules\KidputerControl.Apps.psm1') -Force
 
 $api = $env:KC_IT_API_URL
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("kc-it-" + [guid]::NewGuid().ToString('N'))
@@ -64,6 +65,21 @@ Test 'server state reflects the PIN unlock' {
 
 Test 'heartbeat' {
     Assert-Equal $true (Send-KcHeartbeat -BaseUrl $api -Token $script:token -Status @{ mode = 'none'; ui_agent_alive = $true })
+}
+
+Test 'a dashboard command arrives, and its result and a process report go back' {
+    $cmds = @($script:state.commands)
+    Assert-Equal 1 $cmds.Count
+    Assert-Equal 'stop_app' $cmds[0].kind
+    Assert-Equal 'Minecraft' $cmds[0].payload.name
+    $procs = @([pscustomobject]@{ Id = 4242; Name = 'javaw'; Path = 'C:\Games\javaw.exe'; StartTime = $null; MemoryMB = 900; HasWindow = $true; Title = $null })
+    $report = @{ child_signed_in = $true; processes = (ConvertTo-KcProcessReport -Processes $procs -VersionLookup { param($p) @{ product = 'Minecraft'; description = 'Minecraft'; company = 'Mojang' } }) }
+    Assert-Equal $true (Send-KcReport -BaseUrl $api -Token $script:token -Kind 'processes' -Data $report)
+    $result = [pscustomobject]@{ id = $cmds[0].id; status = 'done'; result = @{ closed = 1; forced = 0 } }
+    Assert-Equal $true (Send-KcCommandResult -BaseUrl $api -Token $script:token -Result $result)
+    # A result for a command the server no longer knows counts as delivered, so it isn't retried forever.
+    $gone = [pscustomobject]@{ id = [guid]::NewGuid().ToString(); status = 'done'; result = $null }
+    Assert-Equal $true (Send-KcCommandResult -BaseUrl $api -Token $script:token -Result $gone)
 }
 
 Test 'offline API is reported, not thrown' {

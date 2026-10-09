@@ -189,6 +189,8 @@ class Device(Base):
     # Start of the most recent silence, kept after contact resumes so the agent's restart report can
     # tell "the PC was off" from "Kidputer Control was stopped while Windows was running".
     last_silence_started: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # While a parent has a live view open (running apps, files), the PC checks in every few seconds.
+    live_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (CheckConstraint("mode IN ('managed', 'trusted')", name="ck_devices_mode"),)
 
@@ -215,6 +217,8 @@ class DeviceSettings(Base):
     pin_override_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("60"))
     # Alert parents when the PC hasn't checked in for this long. 0 = off.
     silent_alert_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("15"))
+    # Window titles can reveal browser tabs or document names, so the PC only reports them if asked.
+    show_window_titles: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     device: Mapped[Device] = relationship(back_populates="settings")
@@ -410,3 +414,37 @@ class AppSecret(Base):
     name: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = _created_at()
+
+
+class DeviceCommand(Base):
+    """Something a parent asked the PC to do (close an app, list a folder, ...). Delivered in the state
+    snapshot; the agent reports the result."""
+
+    __tablename__ = "device_commands"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'pending'"))
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'done', 'failed')", name="ck_device_commands_status"),
+        Index("ix_device_commands_pending", "device_id", postgresql_where=text("status = 'pending'")),
+    )
+
+
+class DeviceReport(Base):
+    """The latest copy of something the PC reports in bulk: running processes, drives, scans, ..."""
+
+    __tablename__ = "device_reports"
+
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

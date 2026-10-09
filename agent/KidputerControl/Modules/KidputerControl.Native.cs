@@ -67,6 +67,32 @@ public static class KcNative
         return WTSGetActiveConsoleSessionId();
     }
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, int processId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool QueryFullProcessImageNameW(IntPtr process, int flags, StringBuilder name, ref int size);
+
+    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+    /// <summary>Full path of a process's program file, or null if it can't be read. Works for most
+    /// processes where Process.MainModule doesn't (other bitness, protected processes).</summary>
+    public static string ProcessPath(int processId)
+    {
+        IntPtr h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+        if (h == IntPtr.Zero) return null;
+        try
+        {
+            StringBuilder sb = new StringBuilder(1024);
+            int size = sb.Capacity;
+            return QueryFullProcessImageNameW(h, 0, sb, ref size) ? sb.ToString(0, size) : null;
+        }
+        finally
+        {
+            CloseHandle(h);
+        }
+    }
+
     /// <summary>SID of the user logged on to the session, or null if nobody is (e.g. the logon screen).</summary>
     public static string GetSessionUserSid(uint sessionId)
     {

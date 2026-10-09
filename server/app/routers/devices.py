@@ -69,6 +69,7 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         pin_lockout_minutes=s.pin_lockout_minutes,
         pin_override_minutes=s.pin_override_minutes,
         silent_alert_minutes=s.silent_alert_minutes,
+        show_window_titles=s.show_window_titles,
         updated_at=s.updated_at,
     )
 

@@ -11,7 +11,7 @@ from .bootstrap import bootstrap_admin
 from .config import get_settings
 from .deps import CSRF_HEADER
 from .jobs import start_background_jobs
-from .routers import agent, auth, devices, notifications, parents, passkeys
+from .routers import agent, apps, auth, devices, notifications, parents, passkeys
 
 settings = get_settings()
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -66,6 +66,7 @@ app.include_router(passkeys.router, prefix="/api/v1")
 app.include_router(parents.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(apps.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")
 
 

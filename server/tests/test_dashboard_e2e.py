@@ -419,3 +419,64 @@ def test_notification_settings(page, live_app):
     page.reload()
     expect(page.get_by_label("USB drives")).to_have_value("immediate")
     expect(page.get_by_label("From")).to_have_value("22:00")
+
+
+def make_enrolled_device(base_url: str, name: str = "Sam's PC") -> httpx.Client:
+    """A PC that's already installed: returns an agent HTTP client (with .device_id) for it."""
+    from app.db import SessionLocal
+    from app.deps import utcnow
+    from app.models import Device, DeviceSettings
+    from app.security import new_token, token_hash
+
+    token = new_token()
+    with SessionLocal() as db:
+        d = Device(name=name, timezone="Europe/London", token_hash=token_hash(token), enrolled_at=utcnow(), hostname="SAM-PC", last_seen_at=utcnow())
+        d.settings = DeviceSettings()
+        db.add(d)
+        db.commit()
+        device_id = str(d.id)
+    agent = httpx.Client(base_url=base_url, headers={"Authorization": f"Bearer {token}"})
+    agent.device_id = device_id
+    return agent
+
+
+def test_running_apps_and_closing_one(page, live_app):
+    _, secret = make_admin()
+    agent = make_enrolled_device(live_app)
+    page.on("dialog", lambda d: d.accept())
+    sign_in_ui(page, secret)
+    page.locator(".device-card").click()
+    page.get_by_role("tab", name="Apps").click()
+    expect(page.get_by_text("Waiting for the PC")).to_be_visible()
+    # Opening the tab puts the PC on fast polling.
+    deadline = time.time() + 5
+    while agent.get("/api/v1/agent/state").json()["live_until"] is None:
+        assert time.time() < deadline
+        time.sleep(0.2)
+
+    mc = "C:\\Program Files\\Minecraft\\runtime\\javaw.exe"
+    procs = [
+        {"pid": 10, "name": "javaw", "path": mc, "has_window": True, "memory_mb": 1800, "description": "Minecraft", "company": "Mojang", "system": False, "started_at": None, "title": None, "product": None},
+        {"pid": 11, "name": "OneDrive", "path": "C:\\Users\\Sam\\OneDrive.exe", "has_window": False, "memory_mb": 40, "description": "Microsoft OneDrive", "company": "Microsoft", "system": False, "started_at": None, "title": None, "product": None},
+        {"pid": 12, "name": "explorer", "path": "C:\\Windows\\explorer.exe", "has_window": True, "memory_mb": 90, "description": "Windows Explorer", "company": "Microsoft", "system": True, "started_at": None, "title": None, "product": None},
+    ]
+    r = agent.post("/api/v1/agent/reports/processes", json={"child_signed_in": True, "processes": procs})
+    assert r.status_code == 204, r.text
+    apps = page.get_by_test_id("running-apps")
+    expect(apps).to_contain_text("Minecraft", timeout=12000)  # the page refreshes every 5 s
+    expect(apps).to_contain_text("1.8 GB")
+    expect(apps).not_to_contain_text("Windows Explorer")  # Windows' own processes are hidden
+    expect(page.get_by_test_id("background-apps")).to_contain_text("Microsoft OneDrive")
+    shot(page, "40-apps")
+
+    apps.get_by_role("button", name="Close").click()
+    page.get_by_role("button", name="Warn, then close in 1 minute").click()
+    expect(page.get_by_test_id("app-stops")).to_contain_text("Closing")
+    cmd = agent.get("/api/v1/agent/state").json()["commands"][0]
+    assert cmd["kind"] == "stop_app" and cmd["payload"]["path"] == mc and cmd["payload"]["grace_seconds"] == 60
+    agent.post(f"/api/v1/agent/commands/{cmd['id']}/result", json={"status": "done", "result": {"closed": 1}})
+    expect(page.get_by_test_id("app-stops")).to_contain_text("Closed")
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_fits_screen(page)
+    shot(page, "41-apps-phone")

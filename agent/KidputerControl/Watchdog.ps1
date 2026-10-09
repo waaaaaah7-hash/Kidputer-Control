@@ -22,6 +22,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Common.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Apps.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $DataRoot
 
 # --- Single instance ------------------------------------------------------------------------------------
@@ -58,6 +59,9 @@ $sync = @{ Phase = 'state'; NextAt = [DateTimeOffset]::MinValue; Failures = 0; L
 $tamper = @{ NextAt = [DateTimeOffset]::MinValue; Problems = @() }
 $adminCheck = @{ NextAt = [DateTimeOffset]::MinValue; IsAdmin = $false }
 $power = @{ LastTick = $null; ShutdownReported = $false }
+$reports = @{ ProcessesAt = [DateTimeOffset]::MinValue }
+$appStops = New-Object System.Collections.ArrayList   # apps being closed: warning shown, then closed
+$script:childSession = $null
 $lastMode = $null
 $lastUiJson = $null
 $pinResult = $null
@@ -68,7 +72,14 @@ function Save-Local {
     Write-KcJsonFile -Path $paths.LocalFile -Object $local
 }
 
+function Test-Live {
+    <# A parent has a live view open, or a command is waiting: check in every few seconds. #>
+    $until = ConvertTo-KcDate (Get-KcProp $state 'live_until')
+    ($null -ne $until -and (Get-KcNow) -lt $until) -or @(Get-KcProp $state 'commands' @()).Count -gt 0 -or $appStops.Count -gt 0
+}
+
 function Get-PollSeconds {
+    if (Test-Live) { return 3 }
     $s = [int](Get-KcProp $state 'poll_interval_seconds' 30)
     [Math]::Min([Math]::Max($s, 5), 3600)
 }
@@ -112,7 +123,9 @@ function Update-UiAgent {
     $sid = $null
     if ($session -ne [KcNative]::NoSession) { $sid = [KcNative]::GetSessionUserSid($session) }
     $script:consoleIsChild = ($null -ne $sid) -and ($sid -eq $childSid)
+    $script:childSession = $null
     if (-not $script:consoleIsChild) { return }   # enforcement applies to the child's account only
+    $script:childSession = [int]$session
 
     if ((Test-UiAlive) -and $ui.SessionId -eq $session) { return }
 
@@ -244,7 +257,25 @@ function Invoke-SyncStep {
         }
         'events' {
             [void](Send-KcQueuedEvents -BaseUrl $apiUrl -Token $token -MaxBatches 1)
-            if ((Get-KcQueuedEvents).Count -eq 0) { $sync.Phase = 'heartbeat' }
+            if ((Get-KcQueuedEvents).Count -eq 0) { $sync.Phase = 'reports' }
+        }
+        'reports' {
+            # At most one upload per tick: a command result, else a due report.
+            if (@($local.command_results).Count) {
+                $first = @($local.command_results)[0]
+                if (Send-KcCommandResult -BaseUrl $apiUrl -Token $token -Result $first) {
+                    $local.command_results = @(@($local.command_results) | Select-Object -Skip 1)
+                    $script:localDirty = $true
+                }
+                return
+            }
+            $sync.Phase = 'heartbeat'
+            $every = 600
+            if (Test-Live) { $every = 5 }
+            if (($now - $reports.ProcessesAt).TotalSeconds -ge $every) {
+                $reports.ProcessesAt = $now
+                [void](Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'processes' -Data (Get-ProcessReport))
+            }
         }
         'heartbeat' {
             [void](Send-KcHeartbeat -BaseUrl $apiUrl -Token $token -Status (Get-Status))
@@ -273,6 +304,79 @@ function Get-Status {
     if ($d -and $d.UnlockAt) { $s.unlock_at = ConvertTo-KcIso $d.UnlockAt }
     if ($d -and $d.OverrideEndsAt) { $s.override_ends_at = ConvertTo-KcIso $d.OverrideEndsAt }
     $s
+}
+
+# --- Apps: reports and closing apps from the dashboard ------------------------------------------------------------
+
+function Get-ChildProcesses {
+    if ($null -eq $script:childSession) { return , @() }
+    Get-KcSessionProcesses -SessionId $script:childSession -IncludeTitles:([bool](Get-KcProp $state 'show_window_titles' $false))
+}
+
+function Get-ProcessReport {
+    @{ child_signed_in = ($null -ne $script:childSession); processes = (ConvertTo-KcProcessReport -Processes (Get-ChildProcesses)) }
+}
+
+function Complete-Command {
+    param([string]$Id, [string]$Status, [hashtable]$Result)
+    $local.handled_commands = Add-KcBoundedItem -List $local.handled_commands -Item $Id -Max 200
+    $local.command_results = @(@($local.command_results) + @([pscustomobject]@{ id = $Id; status = $Status; result = $Result }))
+    $script:localDirty = $true
+    $sync.Phase = 'events'
+    $sync.NextAt = Get-KcNow
+}
+
+function Start-AppStop {
+    param($Command)
+    $payload = Get-KcProp $Command 'payload'
+    $path = [string](Get-KcProp $payload 'path' '')
+    $name = [string](Get-KcProp $payload 'name' 'the app')
+    if ($name.Length -gt 100) { $name = $name.Substring(0, 100) }
+    $grace = [Math]::Min([Math]::Max([int](Get-KcProp $payload 'grace_seconds' 60), 0), 600)
+    $targets = Select-KcProcessesToStop -Processes (Get-ChildProcesses) -Path $path -InstallRoot $InstallRoot
+    if ($targets.Count -eq 0) {
+        Complete-Command -Id $Command.id -Status 'failed' -Result @{ reason = 'not_running'; message = "$name isn't running on the PC." }
+        return
+    }
+    $now = Get-KcNow
+    [void]$appStops.Add(@{ CommandId = [string]$Command.id; Path = $path; Name = $name; EndsAt = $now.AddSeconds($grace); ForceAt = $null })
+    Add-KcEvent -Type 'app.stop_warning' -Message "Closing $name in $grace seconds" -Data @{ path = $path; grace_seconds = $grace }
+}
+
+function Update-AppStops {
+    <#
+        Warning over: the UI agent (in the child's session, where it can reach the app's windows) asks
+        the app to close so it can save; whatever is still running 5 seconds later is force-closed.
+    #>
+    $now = Get-KcNow
+    foreach ($stop in @($appStops)) {
+        if ($now -lt $stop.EndsAt) { continue }
+        $targets = Select-KcProcessesToStop -Processes (Get-ChildProcesses) -Path $stop.Path -InstallRoot $InstallRoot
+        if ($null -eq $stop.ForceAt) {
+            $stop.ForceAt = $now.AddSeconds(5)
+            $stop.Count = $targets.Count
+            continue
+        }
+        if ($now -lt $stop.ForceAt -and $targets.Count) { continue }
+        $forced = 0
+        foreach ($t in $targets) { try { Stop-Process -Id $t.Id -Force -ErrorAction Stop; $forced++ } catch { } }
+        Add-KcEvent -Type 'app.stopped' -Message "$($stop.Name) was closed" -Data @{ path = $stop.Path; forced = $forced }
+        Complete-Command -Id $stop.CommandId -Status 'done' -Result @{ closed = [Math]::Max([int]$stop.Count, $forced); forced = $forced }
+        $appStops.Remove($stop)
+    }
+}
+
+function Invoke-Commands {
+    <# Carry out new commands from the dashboard (each once; ids are remembered across restarts). #>
+    foreach ($cmd in @(Get-KcProp $state 'commands' @())) {
+        $id = [string](Get-KcProp $cmd 'id' '')
+        if (-not $id -or @($local.handled_commands) -contains $id) { continue }
+        if (@($appStops | Where-Object { $_.CommandId -eq $id }).Count) { continue }
+        switch ([string](Get-KcProp $cmd 'kind' '')) {
+            'stop_app' { Start-AppStop -Command $cmd }
+            default { Complete-Command -Id $id -Status 'failed' -Result @{ reason = 'unsupported'; message = 'This PC needs a newer version of Kidputer Control for that.' } }
+        }
+    }
 }
 
 # --- Tamper -------------------------------------------------------------------------------------------------------
@@ -338,6 +442,8 @@ function Update-Enforcement {
         pin_result        = $script:pinResult
         message           = $(if ($msg) { [ordered]@{ id = [string]$msg.id; body = [string]$msg.body; mode = [string]$msg.mode } } else { $null })
         device_name       = Get-KcProp $state 'name'
+        app_warnings      = @($appStops | Where-Object { $null -eq $_.ForceAt } | ForEach-Object { [ordered]@{ name = $_.Name; ends_at = (ConvertTo-KcIso $_.EndsAt) } })
+        app_closing       = @($appStops | Where-Object { $null -ne $_.ForceAt } | ForEach-Object { $_.Path })
     }
     $json = ConvertTo-Json -InputObject $uiState -Depth 5 -Compress
     if ($json -ne $script:lastUiJson) {
@@ -392,6 +498,8 @@ while ($true) {
         Update-Enforcement
         if ($script:localDirty) { Save-Local; $script:localDirty = $false }
         Update-UiAgent
+        Invoke-Commands
+        Update-AppStops
         Invoke-SyncStep
         Invoke-TamperCheck
         Update-ChildAdminStatus

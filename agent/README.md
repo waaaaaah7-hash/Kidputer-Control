@@ -142,6 +142,13 @@ a short schedule window, or an immediate lock, set from the dashboard.
     reach the server in time; that's a false alarm, not a fault.)
 13. **Sleep:** put the PC to sleep for a few minutes and wake it. The log shows "PC woke from
     sleep".
+14. **Running apps:** with the child signed in and an app open (Notepad doesn't count: Windows'
+    own programs are hidden), open the device's **Apps** tab. The app appears within a few
+    seconds, with its name and memory use.
+15. **Closing an app:** click **Close**, then **Warn, then close in 1 minute**. The child sees
+    "<app> closes in 1:00" bottom-right. When it reaches zero the app is asked to close (it can
+    still offer to save) and is force-closed 5 seconds later if it's still open. The dashboard
+    shows "Closed". Try **Close right away** too.
 
 ## Tests
 

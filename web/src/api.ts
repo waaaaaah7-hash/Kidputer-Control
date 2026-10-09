@@ -69,6 +69,36 @@ export interface SentNotification {
   sent_at: string | null;
 }
 
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  path: string | null;
+  started_at: string | null;
+  memory_mb: number;
+  has_window: boolean;
+  title: string | null;
+  description: string | null;
+  product: string | null;
+  company: string | null;
+  system: boolean;
+}
+
+export interface ProcessesReport {
+  updated_at: string | null;
+  processes: ProcessInfo[];
+  window_titles: boolean;
+}
+
+export interface DeviceCommand {
+  id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  status: "pending" | "done" | "failed" | "expired";
+  result: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export interface InviteInfo {
   email: string;
   invited_by: string | null;
@@ -169,6 +199,7 @@ export interface DeviceSettings {
   pin_lockout_minutes: number;
   pin_override_minutes: number;
   silent_alert_minutes: number;
+  show_window_titles: boolean;
   updated_at: string;
 }
 
@@ -388,6 +419,15 @@ export const api = {
   unsubscribePush: (endpoint: string) => request<void>("POST", "/notifications/push-subscriptions/remove", { endpoint }),
   testNotification: () => request<{ email: boolean; push: number; email_error: string | null }>("POST", "/notifications/test"),
   recentNotifications: () => request<SentNotification[]>("GET", "/notifications?limit=30"),
+
+  keepLive: (id: string) => request<void>("POST", `/devices/${encodeURIComponent(id)}/live`),
+  processes: (id: string) => request<ProcessesReport>("GET", `/devices/${encodeURIComponent(id)}/processes`),
+  stopApp: (id: string, body: { path: string; name: string; grace_seconds: number }) =>
+    request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/apps/stop`, body),
+  commands: (id: string, kind?: string) =>
+    request<DeviceCommand[]>("GET", `/devices/${encodeURIComponent(id)}/commands${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
+  command: (id: string, commandId: string) =>
+    request<DeviceCommand>("GET", `/devices/${encodeURIComponent(id)}/commands/${encodeURIComponent(commandId)}`),
 
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),

@@ -252,6 +252,7 @@ class SettingsIn(BaseModel):
     pin_lockout_minutes: int | None = Field(default=None, ge=1, le=1440)
     pin_override_minutes: int | None = Field(default=None, ge=1, le=1440)
     silent_alert_minutes: int | None = Field(default=None, ge=0, le=1440)
+    show_window_titles: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -265,6 +266,7 @@ class SettingsOut(BaseModel):
     pin_lockout_minutes: int
     pin_override_minutes: int
     silent_alert_minutes: int
+    show_window_titles: bool
     updated_at: datetime
 
 
@@ -378,3 +380,8 @@ class AgentEventsOut(BaseModel):
 class HeartbeatIn(BaseModel):
     agent_version: str | None = Field(default=None, max_length=32)
     status: dict[str, Any] = Field(default_factory=dict)
+
+
+class CommandResultIn(BaseModel):
+    status: Literal["done", "failed"]
+    result: dict[str, Any] | None = None

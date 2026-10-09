@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
 import InstallPanel, { ModeChoice } from "../InstallPanel";
+import AppsTab from "../device/AppsTab";
 import { UserCancelled } from "../cancel";
 import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
@@ -26,8 +27,16 @@ interface Live {
   message: Message | null;
 }
 
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "apps", label: "Apps" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
 export default function DeviceDetail() {
   const { id = "" } = useParams();
+  const [params, setParams] = useSearchParams();
+  const tab: TabId = TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as TabId) : "overview";
   const live = useLoader<Live>(
     async () => {
       const [device, lock, overrides, message] = await Promise.all([api.device(id), api.lock(id), api.overrides(id), api.message(id)]);
@@ -52,20 +61,37 @@ export default function DeviceDetail() {
       </p>
       <StatusHeader device={device} />
       <ErrorNote error={live.error} />
-      <div className="columns">
-        <div className="stack">
-          <RightNow live={live.data} onChange={refresh} />
-          <MessagePanel device={device} message={live.data.message} onChange={refresh} />
-          <Card title="Recent activity" actions={<Link to={`/activity?device=${device.id}`}>All activity</Link>}>
-            {events.data ? <EventList events={events.data} /> : <Spinner />}
-          </Card>
-        </div>
-        <div className="stack">
-          <SchedulePanel device={device} onChange={refresh} />
-          <SettingsPanel device={device} onChange={refresh} />
-          <DevicePanel device={device} onChange={refresh} />
-        </div>
+      <div className="tabs" role="tablist" aria-label="Device sections">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "tab active" : "tab"}
+            onClick={() => setParams(t.id === "overview" ? {} : { tab: t.id }, { replace: true })}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
+      {tab === "apps" && <AppsTab device={device} />}
+      {tab === "overview" && (
+        <div className="columns">
+          <div className="stack">
+            <RightNow live={live.data} onChange={refresh} />
+            <MessagePanel device={device} message={live.data.message} onChange={refresh} />
+            <Card title="Recent activity" actions={<Link to={`/activity?device=${device.id}`}>All activity</Link>}>
+              {events.data ? <EventList events={events.data} /> : <Spinner />}
+            </Card>
+          </div>
+          <div className="stack">
+            <SchedulePanel device={device} onChange={refresh} />
+            <SettingsPanel device={device} onChange={refresh} />
+            <DevicePanel device={device} onChange={refresh} />
+          </div>
+        </div>
+      )}
     </>
   );
 }

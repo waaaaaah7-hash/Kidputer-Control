@@ -15,8 +15,8 @@ practicality.
 | # | Feature | Source | Effort | Feasibility | Practicality |
 |---|---|---|---|---|---|
 | 0 | Verify 1.0 on a real Windows PC | Prerequisite | S (parent's time + fixes) | High | Essential |
-| 1 | See running apps and processes | Requested | M | High | High |
-| 2 | Stop a running app remotely | Requested | M | High | High |
+| 1 | See running apps and processes **(done)** | Requested | M | High | High |
+| 2 | Stop a running app remotely **(done)** | Requested | M | High | High |
 | 3 | Schedule availability of common apps | Requested | L | High, with caveats | High |
 | 4 | Add custom apps | Requested | S (on top of #3) | High | High |
 | 5 | Per-app usage time | Suggested (feeds #6–7) | M | High | High |
@@ -62,7 +62,7 @@ launch into the child's session, the scheduled task, and the folder permissions.
 on top of all of these, so run the first-run checklist in `agent/README.md` once before building
 more on them.
 
-## 1. See running apps and processes — M
+## 1. See running apps and processes — M — done
 
 - The SYSTEM watchdog lists the processes in the child's session: name, path, start time, memory,
   and whether the process has a visible window.
@@ -74,7 +74,7 @@ more on them.
 - **Privacy:** window titles can reveal browser tabs or document names, so showing them is an
   opt-in setting.
 
-## 2. Stop a running app remotely — M
+## 2. Stop a running app remotely — M — done
 
 - Each app in the list gets a **Close** button.
 - The PC picks up the request on its next check. While a stop is pending, that check happens about

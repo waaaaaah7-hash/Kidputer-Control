@@ -52,6 +52,7 @@ def test_agent_module_against_live_api(live_server):
         admin.put(f"/api/v1/devices/{dev}/schedule", json={"entries": [{"day_of_week": d, "lock_at": "21:00", "unlock_at": "07:00"} for d in range(7)]})
         admin.put(f"/api/v1/devices/{dev}/pin", json={"pin": "246810"})
         admin.post(f"/api/v1/devices/{dev}/lock", json={"reason": "integration"})
+        stop = admin.post(f"/api/v1/devices/{dev}/apps/stop", json={"path": "C:\\Games\\javaw.exe", "name": "Minecraft"}).json()
 
         env = {**os.environ, "KC_IT_API_URL": live_server, "KC_IT_ENROLL_CODE": created["enrollment_code"], "KC_IT_PIN": "246810"}
         proc = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=180)
@@ -64,5 +65,8 @@ def test_agent_module_against_live_api(live_server):
         assert admin.get(f"/api/v1/devices/{dev}/lock").json() is None
         overrides = admin.get(f"/api/v1/devices/{dev}/overrides").json()
         assert [o["reason"] for o in overrides] == ["Lock-screen PIN"]
+        assert admin.get(f"/api/v1/devices/{dev}/commands/{stop['id']}").json()["status"] == "done"
+        procs = admin.get(f"/api/v1/devices/{dev}/processes").json()["processes"]
+        assert [(p["pid"], p["company"]) for p in procs] == [(4242, "Mojang")]
         device = admin.get(f"/api/v1/devices/{dev}").json()
         assert device["enrolled"] and device["last_status"]["ui_agent_alive"] is True
