@@ -34,15 +34,15 @@ practicality.
 | 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
 | 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
-| 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello | Requested | M | High | High |
-| 21 | Remember this device, with a signed-in devices page and re-checks for risky actions | Requested | S | High | High |
+| 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
+| 21 | Remember this device, with a signed-in devices page and re-checks for risky actions **(done)** | Requested | S | High | High |
 
 ## Release plan
 
 | Version | Contents |
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
-| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21). |
+| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). |
 | **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
@@ -373,7 +373,7 @@ Scope and limits:
 | Fast scanning engine (C#, background, low priority, scheduled) | M | High | High |
 | Size view (sortable tree, largest files, by type, what changed) | M | High | High: finding big games, stashed downloads, or a full disk |
 
-## 20. Passkeys — M
+## 20. Passkeys — M — done
 
 Sign in to the dashboard with Face ID, a fingerprint, or Windows Hello instead of a password and
 6-digit code. Passkeys are built into phones and browsers (iCloud Keychain, Google Password Manager,
@@ -405,7 +405,7 @@ that account should have its own 2FA turned on.
 `webauthn` for Python) and the browser's built-in passkey support. It needs a new table for
 registered passkeys and two sign-in endpoints (start and finish).
 
-## 21. Remember this device — S
+## 21. Remember this device — S — done
 
 Today a sign-in lasts a fixed 12 hours, and the authenticator code is asked at every sign-in.
 
@@ -413,15 +413,16 @@ Today a sign-in lasts a fixed 12 hours, and the authenticator code is asked at e
 - A "Remember this device for 30 days" checkbox at sign-in.
 - On a remembered phone or browser, the authenticator code is skipped. The password is still
   needed when a session ends, unless passkeys (#20) are used.
-- Optionally, sessions extend while in use instead of ending after a fixed 12 hours.
+- Optionally, sessions extend while in use instead of ending after a fixed 12 hours. *(Not built
+  yet: sessions still last 12 hours.)*
 
 **Safeguards, built as part of this item**
 
 The dashboard can unlock the child's PC, so anyone holding the parent's unlocked phone could do so
 too. Two safeguards keep long sign-ins safe:
-- **Signed-in devices page:** every active sign-in and remembered device, with browser, approximate
-  location (from the IP address), and last use. Any of them can be signed out, for example a lost
-  phone.
+- **Signed-in devices page:** every active sign-in and remembered device, with browser, IP address,
+  and last use. Any of them can be signed out, for example a lost phone. (A location derived from
+  the IP address would need a GeoIP database, so it isn't included.)
 - **Re-check for risky actions:** even on a remembered device, ask for Face ID / fingerprint (#20) or
   the authenticator code before deleting a PC, changing the lock-screen PIN, downloading an
   installer, or approving an install request (#18).

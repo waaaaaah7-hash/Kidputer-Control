@@ -73,10 +73,67 @@ class AdminSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ip: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(512))
+    # How this session was signed in: 'password_totp', 'passkey', 'password_remembered' or 'password'.
+    auth_method: Mapped[str | None] = mapped_column(String(24))
+    # Last time the parent proved it's them with a second factor (TOTP code or passkey). Risky actions
+    # require this to be recent; a remembered-device sign-in starts without it.
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    remembered_device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("remembered_devices.id", ondelete="SET NULL"))
 
     user: Mapped[AdminUser] = relationship()
 
     __table_args__ = (CheckConstraint("stage IN ('mfa_pending', 'active')", name="ck_admin_sessions_stage"),)
+
+
+class Passkey(Base):
+    """A WebAuthn credential (passkey) the parent can sign in with instead of password + TOTP."""
+
+    __tablename__ = "passkeys"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sign_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    transports: Mapped[list | None] = mapped_column(JSONB)
+    # True for passkeys that sync between devices (iCloud Keychain, Google Password Manager, ...).
+    backed_up: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RememberedDevice(Base):
+    """A browser the parent ticked "Remember this device" on: password sign-ins there skip the TOTP code."""
+
+    __tablename__ = "remembered_devices"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _created_at()
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WebAuthnChallenge(Base):
+    """One-time challenge for a passkey ceremony; deleted when used, expires after a few minutes."""
+
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    challenge: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # 'register', 'login' or 'reverify'
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Set for 'register' and 'reverify' (the signed-in parent); NULL for 'login'.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    __table_args__ = (CheckConstraint("purpose IN ('register', 'login', 'reverify')", name="ck_webauthn_challenge_purpose"),)
 
 
 class Device(Base):

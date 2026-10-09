@@ -58,6 +58,32 @@ App and process management is planned for a future version. That is why the prod
   `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api`, and only its SHA-256 is stored.
   Login happens in two stages: the password creates an `mfa_pending` session that lasts 5 minutes
   and can do nothing else, then the TOTP code swaps it for an `active` session that lasts 12 hours.
+- **Passkeys (WebAuthn, `webauthn` library):** sign in with Face ID, a fingerprint, or Windows
+  Hello instead of the password and code.
+  - **Counts as two factors on its own:** every passkey ceremony requires *user verification*
+    (the fingerprint, face, or device PIN), and the server rejects responses without it.
+  - **Discoverable:** the parent doesn't type an email; the browser offers the passkey for this
+    site.
+  - **One-time challenges:** stored server-side, used once, valid for 5 minutes.
+  - **Clone detection:** a signature counter that goes backwards is refused.
+  - **Bound to the dashboard's domain:** a custom domain means adding passkeys again.
+  - **Backup:** the password plus authenticator code stays as the fallback.
+- **Remember this device:** an optional checkbox on the code step.
+  - It sets a separate, revocable `HttpOnly` cookie, sent only to `/api/v1/auth`, valid for 30 days
+    (`KC_REMEMBER_DEVICE_DAYS`).
+  - On that browser, a correct password alone starts a session, but that session isn't
+    *verified* (below).
+  - Changing the password, or `reset-totp`, forgets every remembered device.
+- **Confirm it's you before risky actions:** each session records when a second factor (TOTP or
+  passkey) was last used.
+  - **Covered actions:** deleting a PC, setting or clearing its PIN, issuing an enrollment code
+    or installer, and adding or removing passkeys.
+  - **Rule:** these need that check within the last 10 minutes (`KC_REVERIFY_MINUTES`).
+    Otherwise the API answers `403 {"code": "reauth_required"}`, and the dashboard asks for a
+    passkey or code and retries.
+- **Signed-in devices:** the Account page lists every live session and remembered device, with a
+  readable browser and OS name, the sign-in method, last activity, and IP address. Any of them can
+  be signed out; forgetting a remembered device also ends the sessions started with it.
 - **CSRF:** SameSite=Strict, and every state-changing admin call must carry an
   `X-Kidputer-Control` header. Browsers can't add that header cross-site without a CORS preflight,
   and we only grant preflights to the dashboard's own origin.

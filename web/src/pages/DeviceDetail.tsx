@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
 import InstallPanel from "../InstallPanel";
+import { UserCancelled } from "../cancel";
+import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
 import {
   DAYS,
@@ -123,7 +125,7 @@ function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void
       setUntil("");
       await onChange();
     } catch (err) {
-      toast(errorMessage(err), "danger");
+      if (!(err instanceof UserCancelled)) toast(errorMessage(err), "danger");
     }
   }
 
@@ -325,6 +327,7 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
   const toast = useToast();
+  const reauth = useReauth();
   useEffect(() => {
     if (loaded.data) setForm(loaded.data);
   }, [loaded.data]);
@@ -343,7 +346,7 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
       return;
     }
     try {
-      await api.setPin(device.id, pin);
+      await reauth(() => api.setPin(device.id, pin));
       setPin("");
       setPin2("");
       toast("PIN saved. The PC picks it up on its next sync.");

@@ -63,6 +63,10 @@ The PC stores the address it was installed with, so after switching:
 Alternatively, set `KC_PUBLIC_URL` to the new address, so every installer uses it wherever the
 dashboard was opened from.
 
+Passkeys belong to the domain they were added on. After switching domains, sign in with your
+password and code, then add your passkeys again from the Account page. Remembered devices also
+need re-ticking on the new domain.
+
 ## Operations
 
 - **Logs:** use the service's Logs tab in Render. The central activity log is in the dashboard
@@ -84,6 +88,8 @@ All settings are environment variables. Defaults are in `server/app/config.py`.
 | `KC_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | empty | First admin only (see above) |
 | `KC_REQUIRE_TOTP` | `true` | Two-factor sign-in is mandatory |
 | `KC_SESSION_TTL_HOURS` | `12` | Dashboard sign-in lifetime |
+| `KC_REMEMBER_DEVICE_DAYS` | `30` | How long "Remember this device" lasts |
+| `KC_REVERIFY_MINUTES` | `10` | How recent a passkey or code check must be before risky changes |
 | `KC_COOKIE_SECURE` | `true` | Set `false` only for local plain-HTTP development |
 | `KC_ENROLLMENT_CODE_TTL_HOURS` | `24` | How long an enrollment code stays valid |
 | `KC_STATIC_DIR` | `/srv/static` in the image | Built dashboard |

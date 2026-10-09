@@ -25,8 +25,14 @@ or send an on-screen message. Everything that happens is recorded in one central
   actions. You can filter by PC, importance, and source.
 - **Offline-safe:** the PC enforces from its last-synced copy of the settings. Only remote actions
   need a connection.
-- **Secure dashboard:** password plus mandatory two-factor sign-in with an authenticator app.
-  Sessions use secure cookies, and repeated failed sign-ins lock the account temporarily.
+- **Secure dashboard:**
+  - Sign in with a **passkey** (Face ID, fingerprint, Windows Hello), or with a password plus a
+    mandatory authenticator-app code.
+  - **"Remember this device"** skips the code on your own phone or computer.
+  - Risky changes, such as deleting a PC or changing its PIN, still ask you to **confirm it's
+    you**.
+  - The Account page lists every **signed-in device** and lets you sign any of them out.
+  - Repeated failed sign-ins lock the account temporarily.
 - **Reversible:** locking always uses the Windows lock (`LockWorkStation`). Nothing is ever shut
   down, so no work is lost.
 
@@ -121,12 +127,20 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | Version | Planned |
 |---|---|
 | **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download (done). |
-| **1.1** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. Sign in with passkeys (Face ID, fingerprint), and remember trusted devices. |
+| **1.1** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. Sign in with passkeys and remember trusted devices (done). |
 | **1.2** | Notifications for major changes: app installs, programs run for the first time, archives, new accounts, Defender, USB drives. A file explorer for the PC's drives with folder-size analysis, like TreeSize. Schedule when common apps are available. Add custom apps. Per-app usage time. |
 | **1.3** | Install requests that a parent approves (Managed mode). Daily screen-time quotas, an "ask for more time" button, schedule templates and holidays. |
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **Passkeys and remembered devices:**
+  - **Passkeys:** sign in with Face ID, a fingerprint, or Windows Hello. A passkey counts as
+    two-factor sign-in on its own, and the authenticator code stays as a backup.
+  - **Remember this device for 30 days:** skips the code on your own browser.
+  - **Confirm it's you:** risky changes ask for a passkey or code if you haven't confirmed in the
+    last 10 minutes.
+  - **Account page:** new sections for passkeys, signed-in devices, and remembered devices.
 
 - **One-click installer:**
   - **Download installer** in the dashboard produces a zip with the agent, your server's address,

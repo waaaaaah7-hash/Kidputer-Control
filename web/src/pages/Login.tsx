@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { UserCancelled } from "../cancel";
+import { passkeysSupported, signInWithPasskey } from "../passkeys";
 import { ErrorNote, errorMessage } from "../ui";
 
 export default function Login() {
@@ -13,6 +15,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,12 +37,25 @@ export default function Login() {
         if (r.mfa_required) setStep("code");
         else await finish();
       } else {
-        await api.loginMfa(code);
+        await api.loginMfa(code, remember);
         await finish();
       }
     } catch (err) {
       setError(errorMessage(err));
       if (step === "code") setCode("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function passkey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithPasskey();
+      await finish();
+    } catch (err) {
+      if (!(err instanceof UserCancelled)) setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -78,12 +94,29 @@ export default function Login() {
                 autoFocus
               />
             </label>
+            <label className="inline">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              Remember this device for 30 days
+            </label>
+            {remember && (
+              <p className="muted small">On this browser you'll only need your password. Only tick this on your own phone or computer.</p>
+            )}
           </>
         )}
         <ErrorNote error={error} />
         <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
           {step === "password" ? "Continue" : "Verify"}
         </button>
+        {step === "password" && passkeysSupported() && (
+          <>
+            <div className="divider">
+              <span>or</span>
+            </div>
+            <button type="button" className="btn btn-secondary btn-block" disabled={busy} onClick={() => void passkey()}>
+              Sign in with a passkey
+            </button>
+          </>
+        )}
         {step === "code" && (
           <button type="button" className="btn btn-ghost btn-block" onClick={() => { setStep("password"); setError(null); }}>
             Use a different account

@@ -20,6 +20,8 @@ class LoginResponse(BaseModel):
 
 class MfaRequest(BaseModel):
     code: str = Field(max_length=16)
+    # "Remember this device": later password sign-ins on this browser skip the code.
+    remember: bool = False
 
 
 class TotpSetupResponse(BaseModel):
@@ -33,6 +35,57 @@ class AdminOut(BaseModel):
     id: uuid.UUID
     email: str
     totp_enabled: bool
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    last_seen_at: datetime | None
+    expires_at: datetime
+    ip: str | None
+    user_agent: str | None
+    auth_method: str | None
+    remembered: bool
+    current: bool
+
+
+class RememberedDeviceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_agent: str | None
+    ip: str | None
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime
+    current: bool = False
+
+
+class PasskeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    backed_up: bool
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class PasskeyRename(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class PasskeyOptionsOut(BaseModel):
+    challenge_id: uuid.UUID
+    # PublicKeyCredentialCreationOptionsJSON / RequestOptionsJSON, passed straight to the browser.
+    options: dict[str, Any]
+
+
+class PasskeyVerifyRequest(BaseModel):
+    challenge_id: uuid.UUID
+    # The browser's credential as JSON (navigator.credentials.create/get, serialized).
+    credential: dict[str, Any]
+    name: str | None = Field(default=None, max_length=100)
 
 
 class ChangePasswordRequest(BaseModel):

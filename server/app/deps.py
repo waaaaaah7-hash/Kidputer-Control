@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -30,9 +30,17 @@ def _load_session(request: Request, db: Session, settings: Settings, stage: str)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
     sess = db.scalar(select(AdminSession).where(AdminSession.token_hash == token_hash(token)))
-    if sess is None or sess.revoked_at is not None or sess.expires_at <= utcnow() or sess.stage != stage:
+    now = utcnow()
+    if sess is None or sess.revoked_at is not None or sess.expires_at <= now or sess.stage != stage:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
+    # For the signed-in devices page; throttled so ordinary requests don't all write.
+    if sess.last_seen_at is None or now - sess.last_seen_at > _LAST_SEEN_EVERY:
+        sess.last_seen_at = now
+        db.commit()
     return sess
+
+
+_LAST_SEEN_EVERY = timedelta(minutes=5)
 
 
 def mfa_pending_session(request: Request, db: DbDep, settings: SettingsDep) -> AdminSession:
@@ -55,6 +63,30 @@ def current_admin(user: Annotated[AdminUser, Depends(admin_for_setup)], settings
 
 
 AdminDep = Annotated[AdminUser, Depends(current_admin)]
+
+# Code the dashboard looks for to show its "Confirm it's you" dialog, then retry the action.
+REAUTH_REQUIRED = "reauth_required"
+
+
+def is_recently_verified(sess: AdminSession, settings: Settings) -> bool:
+    return sess.verified_at is not None and utcnow() - sess.verified_at <= timedelta(minutes=settings.reverify_minutes)
+
+
+def recently_verified_admin(
+    sess: Annotated[AdminSession, Depends(active_session)],
+    user: Annotated[AdminUser, Depends(current_admin)],
+    settings: SettingsDep,
+) -> AdminUser:
+    """For risky actions: the parent must have confirmed with a TOTP code or passkey in the last few minutes."""
+    if not is_recently_verified(sess, settings):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"code": REAUTH_REQUIRED, "message": "Confirm it's you to continue."},
+        )
+    return user
+
+
+VerifiedAdminDep = Annotated[AdminUser, Depends(recently_verified_admin)]
 
 
 def current_device(db: DbDep, authorization: Annotated[str | None, Header()] = None) -> Device:

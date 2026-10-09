@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.3",
     "argon2-cffi>=23.1",
     "pyotp>=2.9",
+    "webauthn>=2.2",
 ]
 
 [project.optional-dependencies]

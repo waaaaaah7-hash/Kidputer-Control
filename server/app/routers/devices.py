@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_admin
 from ..installer import build_installer_zip
-from ..deps import AdminDep, DbDep, SettingsDep, utcnow
+from ..deps import AdminDep, DbDep, SettingsDep, VerifiedAdminDep, utcnow
 from ..models import ActivityEvent, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
 from ..schemas import (
     DeviceCreate,
@@ -115,7 +115,7 @@ def update_device(device_id: uuid.UUID, body: DeviceUpdate, db: DbDep, admin: Ad
 
 
 @router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_device(device_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
+def delete_device(device_id: uuid.UUID, db: DbDep, admin: VerifiedAdminDep) -> None:
     device = _device(db, device_id)
     log_admin(db, admin, "device.deleted", f"Device '{device.name}' ({device.id}) deleted", None, {"device_id": str(device.id)})
     db.delete(device)
@@ -123,7 +123,7 @@ def delete_device(device_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
 
 
 @router.post("/devices/{device_id}/enrollment-code", response_model=EnrollmentCodeOut)
-def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsDep, admin: AdminDep) -> EnrollmentCodeOut:
+def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsDep, admin: VerifiedAdminDep) -> EnrollmentCodeOut:
     """Issue a fresh enrollment code and revoke the current device token (use to reinstall or rotate)."""
     device = _device(db, device_id, lock=True)
     device.token_hash = None
@@ -135,7 +135,7 @@ def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsD
 
 @router.post("/devices/{device_id}/installer", response_class=Response)
 def download_installer(
-    device_id: uuid.UUID, body: InstallerRequest, request: Request, db: DbDep, settings: SettingsDep, admin: AdminDep
+    device_id: uuid.UUID, body: InstallerRequest, request: Request, db: DbDep, settings: SettingsDep, admin: VerifiedAdminDep
 ) -> Response:
     """One-click installer zip with a freshly issued enrollment code and this server's address baked in."""
     device = _device(db, device_id, lock=True)
@@ -212,7 +212,7 @@ def patch_settings(device_id: uuid.UUID, body: SettingsIn, db: DbDep, admin: Adm
 
 
 @router.put("/devices/{device_id}/pin", status_code=status.HTTP_204_NO_CONTENT)
-def set_pin(device_id: uuid.UUID, body: PinIn, db: DbDep, settings: SettingsDep, admin: AdminDep) -> None:
+def set_pin(device_id: uuid.UUID, body: PinIn, db: DbDep, settings: SettingsDep, admin: VerifiedAdminDep) -> None:
     device = _device(db, device_id, lock=True)
     s = device.settings
     s.pin_hash, s.pin_salt = hash_pin(body.pin, settings.pin_pbkdf2_iterations)
@@ -223,7 +223,7 @@ def set_pin(device_id: uuid.UUID, body: PinIn, db: DbDep, settings: SettingsDep,
 
 
 @router.delete("/devices/{device_id}/pin", status_code=status.HTTP_204_NO_CONTENT)
-def clear_pin(device_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
+def clear_pin(device_id: uuid.UUID, db: DbDep, admin: VerifiedAdminDep) -> None:
     device = _device(db, device_id, lock=True)
     s = device.settings
     s.pin_hash = s.pin_salt = s.pin_iterations = None

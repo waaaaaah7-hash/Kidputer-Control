@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     # Admin sessions
     session_cookie_name: str = "kc_session"
     session_ttl_hours: int = 12
+
+    # "Remember this device": password sign-ins on a remembered browser skip the TOTP code.
+    device_cookie_name: str = "kc_device"
+    remember_device_days: int = 30
+
+    # Risky actions (delete a PC, change its PIN, download an installer, manage passkeys) need a
+    # second-factor check (TOTP code or passkey) within this many minutes.
+    reverify_minutes: int = 10
+
+    # Passkeys (WebAuthn). The relying-party ID is the host the dashboard is opened on.
+    webauthn_rp_name: str = "Kidputer Control"
     cookie_secure: bool = True  # set False only for local http dev
 
     # When true, an admin without TOTP enabled can only reach the TOTP setup endpoints.

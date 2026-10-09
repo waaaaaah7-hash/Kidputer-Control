@@ -26,6 +26,43 @@ export interface AgentStatus {
   pin_locked_until?: string | null;
 }
 
+export interface SignedInSession {
+  id: string;
+  created_at: string;
+  last_seen_at: string | null;
+  expires_at: string;
+  ip: string | null;
+  user_agent: string | null;
+  auth_method: "passkey" | "password_totp" | "password_remembered" | "password" | null;
+  remembered: boolean;
+  current: boolean;
+}
+
+export interface RememberedDevice {
+  id: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  current: boolean;
+}
+
+export interface Passkey {
+  id: string;
+  name: string;
+  /** Syncs between devices (iCloud Keychain, Google Password Manager, ...). */
+  backed_up: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** Options from the server, passed straight to the browser's passkey prompt. */
+export interface PasskeyOptions<T = Record<string, unknown>> {
+  challenge_id: string;
+  options: T;
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -118,10 +155,14 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Machine-readable reason, e.g. "reauth_required" (see server/app/deps.py). */
+    public readonly code?: string,
   ) {
     super(message);
   }
 }
+
+export const REAUTH_REQUIRED = "reauth_required";
 
 export const UNAUTHORIZED_EVENT = "kc:unauthorized";
 
@@ -132,6 +173,7 @@ function detailMessage(body: unknown, status: number): string {
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object" && "message" in detail) return String((detail as { message: unknown }).message);
     // FastAPI validation errors: [{loc, msg}, ...]
     if (Array.isArray(detail)) {
       return detail
@@ -141,6 +183,11 @@ function detailMessage(body: unknown, status: number): string {
     }
   }
   return `Request failed (HTTP ${status})`;
+}
+
+function detailCode(body: unknown): string | undefined {
+  const detail = body && typeof body === "object" && "detail" in body ? (body as { detail: unknown }).detail : null;
+  return detail && typeof detail === "object" && "code" in detail ? String((detail as { code: unknown }).code) : undefined;
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -159,7 +206,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     // Session expired or revoked while using the app: let the auth layer send the user to sign in.
     if (res.status === 401 && !path.startsWith("/auth/")) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
-    throw new ApiError(res.status, detailMessage(parsed, res.status));
+    throw new ApiError(res.status, detailMessage(parsed, res.status), detailCode(parsed));
   }
   return parsed as T;
 }
@@ -187,7 +234,7 @@ async function downloadInstaller(deviceId: string, body: { child_user?: string; 
     } catch {
       /* not JSON */
     }
-    throw new ApiError(res.status, detailMessage(parsed, res.status));
+    throw new ApiError(res.status, detailMessage(parsed, res.status), detailCode(parsed));
   }
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "KidputerControl-Installer.zip";
@@ -214,13 +261,35 @@ const d = (id: string) => `/devices/${encodeURIComponent(id)}`;
 export const api = {
   // Auth
   login: (email: string, password: string) => request<LoginResult>("POST", "/auth/login", { email, password }),
-  loginMfa: (code: string) => request<LoginResult>("POST", "/auth/login/mfa", { code }),
+  loginMfa: (code: string, remember = false) => request<LoginResult>("POST", "/auth/login/mfa", { code, remember }),
+  reverify: (code: string) => request<void>("POST", "/auth/reverify", { code }),
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<Admin>("GET", "/auth/me"),
   totpSetup: () => request<{ secret: string; otpauth_uri: string }>("POST", "/auth/totp/setup"),
   totpEnable: (code: string) => request<Admin>("POST", "/auth/totp/enable", { code }),
   changePassword: (current_password: string, new_password: string) =>
     request<void>("POST", "/auth/password", { current_password, new_password }),
+
+  // Signed-in devices and remembered devices
+  sessions: () => request<SignedInSession[]>("GET", "/auth/sessions"),
+  signOutSession: (id: string) => request<void>("DELETE", `/auth/sessions/${encodeURIComponent(id)}`),
+  signOutOthers: () => request<void>("POST", "/auth/sessions/sign-out-others"),
+  rememberedDevices: () => request<RememberedDevice[]>("GET", "/auth/remembered-devices"),
+  forgetDevice: (id: string) => request<void>("DELETE", `/auth/remembered-devices/${encodeURIComponent(id)}`),
+
+  // Passkeys (see passkeys.ts for the browser side)
+  passkeys: () => request<Passkey[]>("GET", "/auth/passkeys"),
+  passkeyRegisterOptions: () => request<PasskeyOptions>("POST", "/auth/passkeys/register/options"),
+  passkeyRegisterVerify: (challenge_id: string, credential: unknown, name?: string) =>
+    request<Passkey>("POST", "/auth/passkeys/register/verify", { challenge_id, credential, name: name || null }),
+  passkeyLoginOptions: () => request<PasskeyOptions>("POST", "/auth/passkeys/login/options"),
+  passkeyLoginVerify: (challenge_id: string, credential: unknown) =>
+    request<LoginResult>("POST", "/auth/passkeys/login/verify", { challenge_id, credential }),
+  passkeyReverifyOptions: () => request<PasskeyOptions>("POST", "/auth/passkeys/reverify/options"),
+  passkeyReverifyVerify: (challenge_id: string, credential: unknown) =>
+    request<void>("POST", "/auth/passkeys/reverify/verify", { challenge_id, credential }),
+  renamePasskey: (id: string, name: string) => request<Passkey>("PATCH", `/auth/passkeys/${encodeURIComponent(id)}`, { name }),
+  removePasskey: (id: string) => request<void>("DELETE", `/auth/passkeys/${encodeURIComponent(id)}`),
 
   // Devices
   devices: () => request<Device[]>("GET", "/devices"),
