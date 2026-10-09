@@ -1,8 +1,9 @@
 # Kidputer Control — Roadmap
 
 This is the plan after version 1.0.0. It includes the features already on record (app and process
-management, usage quotas, weekly reports, bonus time) and further suggestions. Each one is rated
-for effort, feasibility, and practicality.
+management, usage quotas, weekly reports, bonus time), the Managed and Trusted modes with change
+notifications, and further suggestions. Each one is rated for effort, feasibility, and
+practicality.
 
 **Effort:**
 - **S:** a small, contained change.
@@ -23,22 +24,29 @@ for effort, feasibility, and practicality.
 | 7 | Weekly reports (email) | Original roadmap | M | High | Medium |
 | 8 | Bonus time (time bank) | Original roadmap | S | High | Low: extra time already covers most of it |
 | 9 | "Ask for more time" button on the lock screen | Suggested | M | High | High |
-| 10 | Parent notifications (email or push) | Suggested | M | High | High |
+| 10 | Parent notifications (email and push), including "PC went silent" | Requested | M | High | Essential in Trusted mode |
 | 11 | Schedule templates and holidays | Suggested | S | High | Medium |
 | 12 | One-click installer download from the dashboard **(done)** | Suggested | S | High | Medium |
 | 13 | Agent auto-update | Suggested | M | Medium | High, once #1–4 ship |
 | 14 | Several children on one PC | Suggested | M | High | Depends on the household |
 | 15 | Web/site filtering | Often expected | L | Low | Better handled outside the app |
+| 16 | Managed and Trusted modes, chosen in the installer | Requested | S | High | High |
+| 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
+| 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
 
 ## Release plan
 
 | Version | Contents |
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
-| **1.1** | See and stop running apps (#1, #2). Agent auto-update (#13), so later releases are easy to roll out. |
-| **1.2** | App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
-| **1.3** | Daily quotas (#6), parent notifications (#10), "ask for more time" (#9), schedule templates and holidays (#11). |
+| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). |
+| **1.2** | Change monitoring (#17), built on the same process monitoring as #1. App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
+| **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
+
+#10 together with #16 is the most valuable early step whichever mode is chosen, so it moves up to
+1.1. #17 shares the process-start monitoring with #1, and #18 carries the most security risk, so it
+comes last.
 
 ---
 
@@ -162,10 +170,26 @@ PC):
 
 ## 10. Parent notifications — M
 
-- Covers tamper alerts, a PC going offline, blocked-app attempts, and time requests.
-- Email is the simplest to build.
-- Phone push notifications would need the dashboard to be installable as a phone app (a PWA);
-  that is also doable.
+**Channels**
+- **Email** through a provider such as Postmark or Resend. Free tiers usually cover a household.
+- **Phone push notifications**, with the dashboard installed as a phone app (a PWA). This works on
+  Android, and on iPhone once the app is added to the home screen.
+
+**Controls**
+- Each event type can be set to **immediate**, **daily digest**, or **off**.
+- Quiet hours.
+- Repeats are grouped, so extracting 50 zip files sends one alert, not 50.
+
+**"PC went silent"**
+- The server raises an alert such as "No contact from Sam's PC for 15 minutes while it should be
+  on".
+- An administrator account can stop the agent before it reports anything. This server-side check
+  is the one signal that can't be suppressed from the PC, so it's essential in Trusted mode (#16).
+
+**Events covered**
+- Tamper alerts and the PC going silent.
+- Time requests (#9) and blocked-app attempts (#3).
+- Everything detected by change monitoring (#17).
 
 ## 11. Schedule templates and holidays — S
 
@@ -201,3 +225,88 @@ PC):
 - A family-safe DNS service set on the home router covers every device in the house instead.
   Examples are Cloudflare for Families (free) and NextDNS.
 - The practical route is a setup guide in the docs rather than a feature.
+
+## 16. Managed and Trusted modes — S
+
+The installer, and the dashboard's download dialog, ask which mode the PC uses.
+
+| | **Managed** | **Trusted** |
+|---|---|---|
+| Child's account | Standard | Administrator |
+| Schedule, lock now, app rules | Enforced, and the child can't switch them off | Enforced day to day, but the child *could* switch them off |
+| Installing apps | Store and per-user apps freely; anything else through install requests (#18) | The child installs anything; the parent is notified (#10, #17) |
+| Main safety net | Enforcement | Notifications, especially "PC went silent" |
+
+- In Trusted mode, the installer stops refusing an administrator child account.
+- The dashboard records each PC's mode, and labels Trusted PCs "can be switched off by the child".
+- The agent already reports whether the child's account is an administrator, so the dashboard warns
+  if the mode doesn't match the account type.
+- Switching later: change the account type in Windows' Settings and flip the mode in the
+  dashboard. No reinstall needed.
+
+**What an administrator account can do in Trusted mode, and how the parent would know**
+
+| The child could… | Signal |
+|---|---|
+| Disable or delete the watchdog's scheduled task | PC went silent (#10) |
+| Stop the watchdog in an elevated Task Manager | PC went silent, unless it restarts within a minute |
+| Uninstall, or delete the program folder | "Agent uninstalled" or tamper event if sent first; otherwise PC went silent |
+| Block the server in the firewall and edit the cached settings | PC went silent |
+| Change the clock | Clock warning, but only while online |
+| Create a second, unmonitored Windows account | New-account alert (#17) |
+
+## 17. Change monitoring — M–L
+
+These events feed the notifications in #10. Most are useful in both modes; some matter mainly in
+Trusted mode.
+
+| Event | How it's detected | Feasibility | Practicality |
+|---|---|---|---|
+| **App installed or uninstalled** | Compare Windows' installed-programs list (machine-wide and the child's own) every minute, plus Store apps | High: catches standard installers; Steam games register there too | High |
+| **New program run for the first time** | Process-start events (shared with #1): "First run of `game.exe` from Downloads" | High | Very high: catches portable games and tools that never "install", which is usually what a zip turns out to contain |
+| **Compressed files (.zip, .rar, .7z)** | Three signals, listed below | Medium | Medium |
+| **New Windows account created, or someone added to Administrators** | Local accounts and group membership | High | High: a second account wouldn't be monitored |
+| **Kidputer Control tampered with** (task disabled, files changed, uninstalled, clock changed) | Already detected in 1.0; this adds notifications | High | Essential |
+| **Windows Defender protection turned off** | Windows' Defender status | High | Medium, mainly Trusted mode |
+| **USB drive connected** | Windows device events | High | Medium: a common way to bring in portable games |
+| **VPN or remote-access app installed** (NordVPN, AnyDesk, TeamViewer) | A flag in the app catalogue (#3) on top of install detection | High | Medium-high: VPNs are the usual way around router-level web filtering |
+
+**Compressed files.** Three signals:
+- New archive files appearing in Downloads, Desktop, or Documents.
+- Archive tools (7-Zip, WinRAR) opening one.
+- Zips opened in Explorer, seen through Windows' Recent Items list. The child can turn that list
+  off.
+
+Strict detection of an archive being *accessed* isn't practical. Opening a zip in Explorer happens
+inside Explorer itself and leaves no clean trace, and Windows' file-access auditing is noisy and
+heavy. So archives are **digest** items by default, and "a program from a zip was run" (via
+first-run detection) is the **immediate** alert.
+
+**Deliberately excluded:** keystroke logging, screenshots, and browser history. They cost far more
+trust than they're worth with a teenager. Telling the child what's monitored is recommended.
+
+## 18. Install requests (Managed mode) — L
+
+**Requesting**
+- Windows' own administrator prompt runs on a protected screen that other programs can't
+  intercept, so the child asks through Kidputer Control instead.
+- A "Request an app install" shortcut opens a file picker, and the child chooses the installer.
+- The watchdog copies it into a protected folder, so it can't be swapped after approval.
+- The parent sees:
+  - the file name and size
+  - the publisher, and whether its digital signature is valid
+  - a fingerprint, with a link to look it up on VirusTotal
+
+**Running approved installs**
+
+Any installer window running with administrator rights on the child's screen is an escape hatch:
+its "Browse…" dialog can open a command prompt with full rights. Approved installs therefore run
+silently, without a window:
+
+| Installer type | Approach | Feasibility |
+|---|---|---|
+| MSI packages and common installer builders (Inno Setup, NSIS) | Run silently, without a window | High: standard silent-install switches |
+| Apps in the winget catalogue (Discord, Steam, OBS, VLC, and thousands more) | The child requests by name; the parent approves; installed silently | Medium-high: winget is a little temperamental when run by a system service, but it works |
+| Anything else (custom installers with a window) | "Install it in person": the parent types their password at Windows' own prompt | High; less convenient |
+
+Every request and approval is recorded in the activity log.

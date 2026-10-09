@@ -121,9 +121,9 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | Version | Planned |
 |---|---|
 | **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download (done). |
-| **1.1** | See running apps and processes, and stop them remotely. Agent auto-update. |
-| **1.2** | Schedule when common apps (games, browsers, chat) are available. Add custom apps. Per-app usage time. |
-| **1.3** | Daily screen-time quotas, parent notifications, an "ask for more time" button, schedule templates and holidays. |
+| **1.1** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. |
+| **1.2** | Notifications for major changes: app installs, programs run for the first time, archives, new accounts, Defender, USB drives. Schedule when common apps are available. Add custom apps. Per-app usage time. |
+| **1.3** | Install requests that a parent approves (Managed mode). Daily screen-time quotas, an "ask for more time" button, schedule templates and holidays. |
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
