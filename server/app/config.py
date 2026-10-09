@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,13 @@ class Settings(BaseSettings):
 
     # Built dashboard (web/dist). When the folder exists it is served at "/", same origin as the API.
     static_dir: str = "static"
+
+    # Windows agent files bundled into the one-click installer download (the repo's agent/ folder).
+    agent_dir: str = str(Path(__file__).resolve().parents[2] / "agent")
+
+    # Public https address of this service, written into installer downloads. Empty = derive from the
+    # request (correct behind Render's proxy, which forwards the original scheme and host).
+    public_url: str = ""
 
     # One-time bootstrap for hosts without a shell (e.g. Render free tier): if no admin exists yet at
     # startup, create this one. Remove KC_BOOTSTRAP_ADMIN_PASSWORD from the environment afterwards.

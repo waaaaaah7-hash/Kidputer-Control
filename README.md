@@ -75,15 +75,11 @@ or send an on-screen message. Everything that happens is recorded in one central
    first password when asked. Full steps are in [docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md).
 2. **Sign in** and set up two-factor sign-in (scan the QR code). Then remove the bootstrap
    password from Render's environment settings.
-3. **Add a PC** in the dashboard. It shows a one-time enrollment code and the exact install
-   command.
-4. **Install on the child's PC:** in an administrator PowerShell, in the `agent` folder, run:
-
-   ```powershell
-   .\Install.ps1 -ApiUrl https://<your-app>.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
-   ```
-
-   The child should use a **standard** (non-administrator) Windows account.
+3. **Add a PC** in the dashboard and click **Download installer**.
+4. **Install on the child's PC:** unzip the download there and double-click **Install Kidputer
+   Control**. Approve the Windows permission prompt and pick the child's account from the list.
+   The child should use a **standard** (non-administrator) Windows account. Installing by hand
+   with `Install.ps1` is also possible; see [agent/README.md](agent/README.md).
 5. Set the **schedule** and a **lock-screen PIN** on the device's page. Then walk through the
    first-run checklist in [agent/README.md](agent/README.md) once.
 
@@ -124,13 +120,21 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 
 | Version | Planned |
 |---|---|
-| **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download. |
+| **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download (done). |
 | **1.1** | See running apps and processes, and stop them remotely. Agent auto-update. |
 | **1.2** | Schedule when common apps (games, browsers, chat) are available. Add custom apps. Per-app usage time. |
 | **1.3** | Daily screen-time quotas, parent notifications, an "ask for more time" button, schedule templates and holidays. |
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **One-click installer:**
+  - **Download installer** in the dashboard produces a zip with the agent, your server's address,
+    and a one-time enrollment code.
+  - On the PC: double-click **Install Kidputer Control**, approve the Windows permission prompt,
+    and pick the child's account from a list.
+  - Installing by hand still works, and `Install.ps1` now offers the same account list when
+    `-ChildUser` is left out.
 
 - **Renamed to Kidputer Control, version 1.0.0:**
   - The product was renamed from Session Monitor, and the version reset to 1.0.0.

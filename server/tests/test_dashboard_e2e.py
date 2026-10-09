@@ -5,11 +5,13 @@ KC_CHROMIUM_PATH points Playwright at an existing Chromium; KC_E2E_SCREENSHOTS=<
 """
 
 import importlib
+import json
 import os
 import re
 import socket
 import threading
 import time
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -93,12 +95,25 @@ def test_parent_journey(page, live_app):
     expect(page.get_by_role("heading", name="Devices")).to_be_visible()
     expect(page.get_by_text("No PCs yet")).to_be_visible()
 
-    # Add a PC and get its enrollment code.
+    # Add a PC and download its one-click installer.
     page.get_by_role("button", name="Add a PC").click()
     page.get_by_label("Name", exact=True).fill("Sam's PC")
     page.get_by_role("button", name="Create").click()
-    code = page.get_by_test_id("enrollment-code").inner_text()
-    assert re.fullmatch(r"[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}", code)
+    shown_code = page.get_by_test_id("enrollment-code").text_content()
+    page.get_by_label("Child's Windows account").fill("Sam")
+    with page.expect_download() as dl:
+        page.get_by_role("button", name="Download installer").click()
+    download = dl.value
+    assert download.suggested_filename == "KidputerControl-Installer.zip"
+    with zipfile.ZipFile(download.path()) as z:
+        config = json.loads(z.read("KidputerControl-Installer/install-config.json"))
+        assert "KidputerControl-Installer/Install Kidputer Control.cmd" in z.namelist()
+    assert config["child_user"] == "Sam" and config["api_url"] == live_app
+    code = config["enrollment_code"]
+    assert re.fullmatch(r"[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}", code) and code != shown_code
+    expect(page.locator(".steps-done")).to_be_visible()
+    # The by-hand instructions now show the installer's code, not the superseded one.
+    page.get_by_text("Install by hand instead").click()
     expect(page.locator("pre.command")).to_contain_text(f"-EnrollmentCode {code}")
     shot(page, "03-enrollment")
     page.get_by_role("link", name="Set the schedule").click()

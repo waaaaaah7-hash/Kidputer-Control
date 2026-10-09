@@ -88,6 +88,13 @@ class EnrollmentCodeOut(BaseModel):
     expires_at: datetime
 
 
+class InstallerRequest(BaseModel):
+    # Windows account to enforce; blank = the installer asks on the PC.
+    child_user: str | None = Field(default=None, max_length=104, pattern=r"^[^\x00-\x1f\"/:*?<>|]+$")
+    # Required when the PC is already installed: a new code disconnects it until it's reinstalled.
+    replace: bool = False
+
+
 class ScheduleEntryIn(BaseModel):
     day_of_week: int = Field(ge=0, le=6, description="0 = Monday")
     lock_at: time

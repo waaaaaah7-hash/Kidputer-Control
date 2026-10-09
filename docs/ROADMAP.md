@@ -25,7 +25,7 @@ for effort, feasibility, and practicality.
 | 9 | "Ask for more time" button on the lock screen | Suggested | M | High | High |
 | 10 | Parent notifications (email or push) | Suggested | M | High | High |
 | 11 | Schedule templates and holidays | Suggested | S | High | Medium |
-| 12 | One-click installer download from the dashboard | Suggested | S | High | Medium |
+| 12 | One-click installer download from the dashboard **(done)** | Suggested | S | High | Medium |
 | 13 | Agent auto-update | Suggested | M | Medium | High, once #1–4 ship |
 | 14 | Several children on one PC | Suggested | M | High | Depends on the household |
 | 15 | Web/site filtering | Often expected | L | Low | Better handled outside the app |
@@ -34,7 +34,7 @@ for effort, feasibility, and practicality.
 
 | Version | Contents |
 |---|---|
-| **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12). |
+| **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
 | **1.1** | See and stop running apps (#1, #2). Agent auto-update (#13), so later releases are easy to roll out. |
 | **1.2** | App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Daily quotas (#6), parent notifications (#10), "ask for more time" (#9), schedule templates and holidays (#11). |
@@ -173,11 +173,13 @@ PC):
 - Date ranges that switch templates, for example "Summer holiday: use the weekend schedule every
   day".
 
-## 12. One-click installer download — S
+## 12. One-click installer download — S — done
 
 - A zip downloaded from the dashboard, with the server address and enrollment code already filled
   in.
 - The parent no longer has to type the install command.
+- Built: double-click the launcher, approve the Windows permission prompt, and pick the child's
+  account from a list. See `agent/README.md`.
 
 ## 13. Agent auto-update — M
 

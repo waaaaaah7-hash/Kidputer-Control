@@ -11,10 +11,11 @@ export default function EnrollmentInfo({ code, childHint }: { code: EnrollmentCo
         {code.enrollment_code}
       </p>
       <p>
-        On the child's PC, open <strong>PowerShell as administrator</strong> in the <code>agent</code> folder and run:
+        On the child's PC, open <strong>PowerShell as administrator</strong> in the installer (or repository <code>agent</code>) folder
+        and run:
       </p>
       <pre className="command">{command}</pre>
-      <p className="muted small">This code won't be shown again. If it expires, issue a new one from the device's page.</p>
+      <p className="muted small">This code won't be shown again. If it expires, get a new one from the device's page.</p>
     </div>
   );
 }

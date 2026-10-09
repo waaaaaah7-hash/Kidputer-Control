@@ -183,6 +183,13 @@ fieldset { border: 0; padding: 0; margin: 0; }
 }
 .command { background: var(--surface-2); padding: 0.75rem; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 
+/* Install panel */
+.steps { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.steps-done { background: var(--ok-bg); border-radius: 10px; padding: 0.6rem 0.75rem 0.6rem 2rem; }
+details.manual, details.reinstall { border-top: 1px solid var(--border); padding-top: 0.6rem; margin-top: 0.75rem; }
+details > summary { cursor: pointer; color: var(--primary); font-weight: 600; }
+details[open] > summary { margin-bottom: 0.6rem; }
+
 /* Dialog & toasts */
 .dialog {
   border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; width: min(560px, calc(100vw - 2rem));

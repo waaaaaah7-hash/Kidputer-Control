@@ -18,21 +18,40 @@ Requirements:
 - An administrator account for the parent to install with.
 - A **standard** (non-administrator) account for the child.
 
-Steps:
-1. In the dashboard, click **Add a PC**. It shows the enrollment code (valid for 24 hours) and the
-   exact install command, including your dashboard's URL.
-2. Copy this `agent` folder to the child's PC.
-3. Open **PowerShell as administrator** on the child's PC and run:
-
-   ```powershell
-   Set-ExecutionPolicy -Scope Process Bypass
-   .\Install.ps1 -ApiUrl https://kidputer-control.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
-   ```
-
-   For a Microsoft account, use `-ChildUser MicrosoftAccount\sam@example.com`.
-
-4. Set the schedule and lock-screen PIN in the dashboard. The PC picks them up within one poll
+**One-click installer (recommended):**
+1. In the dashboard, click **Add a PC** (or open the device's page) and click **Download
+   installer**. You can type the child's Windows account name first, or leave it blank and pick it
+   during install.
+2. Copy the zip to the child's PC and unzip it.
+3. Signed in as a parent (administrator), double-click **Install Kidputer Control**. Click **Yes**
+   when Windows asks for permission.
+   - If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
+4. Pick the child's account from the numbered list. The list shows only the PC's standard
+   (non-administrator) accounts.
+5. Set the schedule and lock-screen PIN in the dashboard. The PC picks them up within one poll
    interval, 30 seconds by default.
+
+What's in the download:
+- `Install.ps1`, `Uninstall.ps1`, and the `KidputerControl` folder, the same files as in this
+  repository.
+- `install-config.json`: the server address and a one-time enrollment code, valid for 24 hours.
+- `Install Kidputer Control.cmd`: asks Windows for administrator permission, then runs
+  `Install.ps1`.
+
+Each download issues a new code and cancels any earlier one. The code isn't copied onto the PC's
+installed files.
+
+**By hand:** if you'd rather not use the download, click **Install by hand instead** under the
+download button to get an enrollment code. Then, in an administrator PowerShell in this `agent`
+folder, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\Install.ps1 -ApiUrl https://kidputer-control.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
+```
+
+Leave out `-ChildUser` to pick the account from a list. For a Microsoft account, use
+`-ChildUser MicrosoftAccount\sam@example.com`.
 
 To upgrade, run `.\Install.ps1` again with no arguments. It keeps the existing enrollment. To move
 the PC to a new device record, pass a new `-EnrollmentCode`.

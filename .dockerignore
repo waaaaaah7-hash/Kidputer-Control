@@ -3,5 +3,6 @@
 **/__pycache__
 **/.pytest_cache
 .git
-agent
+agent/tests
+agent/README.md
 docs

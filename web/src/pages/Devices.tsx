@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type Device, type EnrollmentCode } from "../api";
-import EnrollmentInfo from "../EnrollmentInfo";
+import InstallPanel from "../InstallPanel";
 import { browserTimeZone, deviceStatus, relativeTime, timeZones } from "../format";
 import { Badge, Card, Dialog, ErrorNote, Spinner, errorMessage, useLoader } from "../ui";
 
@@ -79,9 +79,9 @@ function AddDeviceDialog({ open, onClose }: { open: boolean; onClose: () => void
     <Dialog open={open} onClose={close} title={created ? "Install on the PC" : "Add a PC"}>
       {created ? (
         <>
-          <EnrollmentInfo code={created} />
+          <InstallPanel deviceId={created.device_id} enrolled={false} initialCode={created} />
           <div className="form-actions">
-            <Link className="btn btn-primary" to={`/devices/${created.device_id}`} onClick={close}>
+            <Link className="btn btn-secondary" to={`/devices/${created.device_id}`} onClick={close}>
               Set the schedule
             </Link>
           </div>

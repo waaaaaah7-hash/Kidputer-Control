@@ -8,7 +8,7 @@ COPY web/ ./
 RUN npm run build
 
 FROM python:3.12-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 KC_STATIC_DIR=/srv/static
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 KC_STATIC_DIR=/srv/static KC_AGENT_DIR=/srv/agent
 WORKDIR /srv
 
 COPY server/pyproject.toml ./
@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir .
 COPY server/alembic.ini ./
 COPY server/migrations ./migrations
 COPY --from=web /web/dist ./static
+# Windows agent files, served inside the dashboard's one-click installer download.
+COPY agent ./agent
 
 RUN useradd --system --uid 10001 api
 USER api

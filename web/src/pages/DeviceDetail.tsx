@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type Device, type DeviceSettings, type EnrollmentCode, type LockRequest, type Message, type Override } from "../api";
-import EnrollmentInfo from "../EnrollmentInfo";
+import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
+import InstallPanel from "../InstallPanel";
 import EventList from "../EventList";
 import {
   DAYS,
@@ -424,7 +424,6 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
 function DevicePanel({ device, onChange }: { device: Device; onChange: () => Promise<void> }) {
   const [name, setName] = useState(device.name);
   const [tz, setTz] = useState(device.timezone);
-  const [code, setCode] = useState<EnrollmentCode | null>(null);
   const navigate = useNavigate();
 
   return (
@@ -456,26 +455,19 @@ function DevicePanel({ device, onChange }: { device: Device; onChange: () => Pro
         </ActionButton>
       </div>
 
-      <h3>Install or reinstall</h3>
-      {code ? (
-        <EnrollmentInfo code={code} />
+      {device.enrolled ? (
+        <details className="reinstall">
+          <summary>Reinstall or move to another PC</summary>
+          <p className="muted small">Only needed to repair or move the installation: a new installer disconnects the PC that's installed now.</p>
+          <InstallPanel deviceId={device.id} enrolled onChange={onChange} />
+        </details>
       ) : (
-        <p className="muted small">
-          {device.enrolled
-            ? "Issuing a new code disconnects the PC that's installed now until it's reinstalled with the new code."
-            : "Issue a new code if the original one expired or was lost."}
-        </p>
+        <>
+          <h3>Install on the PC</h3>
+          <InstallPanel deviceId={device.id} enrolled={false} onChange={onChange} />
+        </>
       )}
       <div className="form-actions">
-        <ActionButton
-          confirm={device.enrolled ? "The PC will stop syncing until it's reinstalled with the new code. Continue?" : undefined}
-          onClick={async () => {
-            setCode(await api.reissueEnrollmentCode(device.id));
-            await onChange();
-          }}
-        >
-          New enrollment code
-        </ActionButton>
         <ActionButton
           variant="danger"
           confirm={`Delete "${device.name}" and all of its history? The PC stops receiving changes but keeps enforcing its last schedule until you run Uninstall.ps1 on it.`}

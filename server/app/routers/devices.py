@@ -3,11 +3,14 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_admin
+from ..installer import build_installer_zip
 from ..deps import AdminDep, DbDep, SettingsDep, utcnow
 from ..models import ActivityEvent, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
 from ..schemas import (
@@ -16,6 +19,7 @@ from ..schemas import (
     DeviceUpdate,
     EnrollmentCodeOut,
     EventOut,
+    InstallerRequest,
     LockIn,
     LockOut,
     MessageIn,
@@ -127,6 +131,42 @@ def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsD
     log_admin(db, admin, "device.token_revoked", f"Device '{device.name}' token revoked; new enrollment code issued", device.id)
     db.commit()
     return out
+
+
+@router.post("/devices/{device_id}/installer", response_class=Response)
+def download_installer(
+    device_id: uuid.UUID, body: InstallerRequest, request: Request, db: DbDep, settings: SettingsDep, admin: AdminDep
+) -> Response:
+    """One-click installer zip with a freshly issued enrollment code and this server's address baked in."""
+    device = _device(db, device_id, lock=True)
+    if device.token_hash is not None and not body.replace:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This PC is already installed. A new installer disconnects it until it's reinstalled; confirm to continue.",
+        )
+    api_url = (settings.public_url or str(request.base_url)).rstrip("/")
+    device.token_hash = None
+    code = _issue_enrollment_code(device, settings)
+    try:
+        data = build_installer_zip(
+            Path(settings.agent_dir), api_url, code.enrollment_code, code.expires_at, device.name, body.child_user
+        )
+    except FileNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Installer files are not available on this server") from exc
+    log_admin(db, admin, "device.installer_downloaded", f"Installer downloaded for '{device.name}'", device.id,
+              {"child_user": body.child_user, "replaced_install": body.replace})
+    db.commit()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="KidputerControl-Installer.zip"',
+            # The dashboard shows the new code too, for installing by hand.
+            "X-Enrollment-Code": code.enrollment_code,
+            "X-Enrollment-Expires": code.expires_at.isoformat(),
+        },
+    )
 
 
 # --- Schedule & settings -------------------------------------------------------------

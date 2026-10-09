@@ -164,6 +164,44 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return parsed as T;
 }
 
+export interface InstallerDownload {
+  blob: Blob;
+  filename: string;
+  code: EnrollmentCode;
+}
+
+/** POST that returns a file. The installer response also carries the newly issued enrollment code. */
+async function downloadInstaller(deviceId: string, body: { child_user?: string; replace?: boolean }): Promise<InstallerDownload> {
+  const res = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/installer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1" },
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    const text = await res.text();
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, detailMessage(parsed, res.status));
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "KidputerControl-Installer.zip";
+  return {
+    blob: await res.blob(),
+    filename,
+    code: {
+      device_id: deviceId,
+      enrollment_code: res.headers.get("X-Enrollment-Code") ?? "",
+      expires_at: res.headers.get("X-Enrollment-Expires") ?? "",
+    },
+  };
+}
+
 function query(params: object): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") q.set(k, String(v));
@@ -191,6 +229,7 @@ export const api = {
   updateDevice: (id: string, patch: { name?: string; timezone?: string }) => request<Device>("PATCH", d(id), patch),
   deleteDevice: (id: string) => request<void>("DELETE", d(id)),
   reissueEnrollmentCode: (id: string) => request<EnrollmentCode>("POST", `${d(id)}/enrollment-code`),
+  downloadInstaller,
 
   schedule: (id: string) => request<{ entries: ScheduleEntry[] }>("GET", `${d(id)}/schedule`),
   putSchedule: (id: string, entries: ScheduleEntry[]) => request<{ entries: ScheduleEntry[] }>("PUT", `${d(id)}/schedule`, { entries }),

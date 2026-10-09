@@ -629,4 +629,48 @@ function Get-KcInboxRequests {
     , @($out)
 }
 
+# --- Installer helpers ------------------------------------------------------------------------------------------
+
+function Resolve-KcInstallSettings {
+    <#
+        Merge install-config.json (written into the dashboard's one-click download) with explicit
+        Install.ps1 parameters. Explicit parameters win. Returns @{ApiUrl; EnrollmentCode; ChildUser;
+        AllowInsecureHttp; ExpiresAt; FromConfig}.
+    #>
+    param($Config, [string]$ApiUrl, [string]$EnrollmentCode, [string]$ChildUser, [switch]$AllowInsecureHttp)
+    $r = @{
+        ApiUrl            = $ApiUrl
+        EnrollmentCode    = $EnrollmentCode
+        ChildUser         = $ChildUser
+        AllowInsecureHttp = [bool]$AllowInsecureHttp
+        ExpiresAt         = $null
+        FromConfig        = $false
+    }
+    if ($null -eq $Config) { return $r }
+    $r.FromConfig = $true
+    if (-not $r.ApiUrl) { $r.ApiUrl = [string](Get-KcProp $Config 'api_url' '') }
+    if (-not $r.EnrollmentCode) {
+        $r.EnrollmentCode = [string](Get-KcProp $Config 'enrollment_code' '')
+        $r.ExpiresAt = ConvertTo-KcDate (Get-KcProp $Config 'expires_at')
+    }
+    if (-not $r.ChildUser) { $r.ChildUser = [string](Get-KcProp $Config 'child_user' '') }
+    if (-not $r.AllowInsecureHttp) { $r.AllowInsecureHttp = [bool](Get-KcProp $Config 'allow_insecure_http' $false) }
+    $r
+}
+
+function Select-KcChildCandidates {
+    <#
+        Windows accounts worth offering as "the child": enabled, not built-in (Administrator, Guest,
+        DefaultAccount, WDAGUtilityAccount), not an administrator, and not the parent running the installer.
+        $Users: objects with Name, FullName, Enabled and SID (as from Get-LocalUser).
+    #>
+    param([object[]]$Users, [string[]]$AdminSids = @(), [string]$CurrentSid)
+    $builtinRids = @('500', '501', '503', '504')
+    , @($Users | Where-Object {
+            $sid = [string]$_.SID
+            $_.Enabled -and $sid -and $sid -ne $CurrentSid -and ($AdminSids -notcontains $sid) -and
+            ($builtinRids -notcontains ($sid -split '-')[-1])
+        } | Sort-Object Name)
+}
+
 Export-ModuleMember -Function *-Kc*

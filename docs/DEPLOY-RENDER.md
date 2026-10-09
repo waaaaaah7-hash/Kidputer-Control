@@ -42,14 +42,11 @@ To add a second parent, create them from the Render **Shell** (paid instances):
 
 ## 3. Add the child's PC
 
-1. In the dashboard, click **Add a PC**, name it, and pick its time zone. Copy the enrollment code
-   and the install command it shows.
-2. On the child's PC, open PowerShell as administrator in the repository's `agent` folder and run
-   the command:
-
-   ```powershell
-   .\Install.ps1 -ApiUrl https://kidputer-control.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
-   ```
+1. In the dashboard, click **Add a PC**, name it, and pick its time zone. Then click **Download
+   installer**. The zip already contains your dashboard's address and a one-time enrollment code.
+2. On the child's PC, unzip it and double-click **Install Kidputer Control**. Approve the Windows
+   permission prompt and pick the child's account. (Installing by hand is described in
+   `agent/README.md`.)
 
 3. Set the schedule and a lock-screen PIN on the device's page.
 4. Walk through the first-run checklist in `agent/README.md` once.
@@ -57,13 +54,14 @@ To add a second parent, create them from the Render **Shell** (paid instances):
 ## Custom domain (optional)
 
 Add the domain in Render under **Settings → Custom Domains**. Render issues the TLS certificate.
-The PC stores the API URL it was installed with, so reinstall the agent with the new `-ApiUrl`:
+The PC stores the address it was installed with, so after switching:
+1. Open the dashboard on the new domain.
+2. On the device's page, use **Reinstall or move to another PC → Download installer**. The
+   download uses the address you opened the dashboard on.
+3. Run the new installer on the PC.
 
-```powershell
-.\Install.ps1 -ApiUrl https://monitor.example.com -EnrollmentCode <new code> -ChildUser Sam
-```
-
-Issue the new enrollment code from the device's page first.
+Alternatively, set `KC_PUBLIC_URL` to the new address, so every installer uses it wherever the
+dashboard was opened from.
 
 ## Operations
 
@@ -89,3 +87,5 @@ All settings are environment variables. Defaults are in `server/app/config.py`.
 | `KC_COOKIE_SECURE` | `true` | Set `false` only for local plain-HTTP development |
 | `KC_ENROLLMENT_CODE_TTL_HOURS` | `24` | How long an enrollment code stays valid |
 | `KC_STATIC_DIR` | `/srv/static` in the image | Built dashboard |
+| `KC_AGENT_DIR` | `/srv/agent` in the image | Agent files bundled into installer downloads |
+| `KC_PUBLIC_URL` | empty | Address written into installer downloads. Leave empty to use the address the dashboard was opened on; set it if you use a custom domain and want installers to use it. |
