@@ -87,6 +87,49 @@ $countdownHint.SetBounds(18, 76, 340, 20)
 $countdownForm.Controls.AddRange(@($countdownTitle, $countdownText, $countdownHint))
 $countdownForm.Add_FormClosing({ param($s, $e) if ($e.CloseReason -eq 'UserClosing') { $e.Cancel = $true } })
 
+# --- Notices: an app about to be closed by a parent (and, later, blocked apps) -----------------------------------
+
+function New-NoticeForm {
+    <# A small always-on-top box in the bottom-right corner, like the bedtime countdown. #>
+    $f = New-Object System.Windows.Forms.Form
+    $f.FormBorderStyle = 'None'
+    $f.StartPosition = 'Manual'
+    $f.ShowInTaskbar = $false
+    $f.TopMost = $true
+    $f.BackColor = $bg
+    $f.Size = New-Object System.Drawing.Size(380, 110)
+    $title = New-Object System.Windows.Forms.Label
+    $title.ForeColor = $muted
+    $title.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $title.SetBounds(18, 12, 340, 22)
+    $text = New-Object System.Windows.Forms.Label
+    $text.ForeColor = $fg
+    $text.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
+    $text.SetBounds(18, 38, 350, 34)
+    $hint = New-Object System.Windows.Forms.Label
+    $hint.ForeColor = $muted
+    $hint.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    $hint.SetBounds(18, 76, 340, 20)
+    $f.Controls.AddRange(@($title, $text, $hint))
+    $f.Add_FormClosing({ param($s, $e) if ($e.CloseReason -eq 'UserClosing') { $e.Cancel = $true } })
+    @{ Form = $f; Title = $title; Text = $text; Hint = $hint }
+}
+
+function Show-Notice($notice, [int]$Slot) {
+    # Slot 0 sits in the corner, slot 1 just above it (so it can share the screen with the countdown).
+    if (-not $notice.Form.Visible) {
+        $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        $y = $wa.Bottom - ($notice.Form.Height + 16) * ($Slot + 1)
+        $notice.Form.Location = New-Object System.Drawing.Point(($wa.Right - $notice.Form.Width - 16), $y)
+        $notice.Form.Show()
+    }
+}
+
+$appNotice = New-NoticeForm
+$appNotice.Title.Text = 'A parent is closing an app'
+$appNotice.Hint.Text = 'Save your work now.'
+$script:closeRequested = @{}   # process ids already asked to close
+
 # --- Lock screen -------------------------------------------------------------------------------------------------
 
 $lockForm = New-Object System.Windows.Forms.Form
@@ -267,6 +310,44 @@ function Update-Ui {
         }
     } elseif ($countdownForm.Visible) {
         $countdownForm.Hide()
+    }
+
+    # App about to be closed by a parent
+    $warnings = @()
+    if ($null -ne $u -and $u.PSObject.Properties['app_warnings']) { $warnings = @($u.app_warnings) }
+    if ($warnings.Count) {
+        $w = $warnings[0]
+        $ends = ConvertTo-KcDate $w.ends_at
+        $left = 0
+        if ($ends) { $left = [Math]::Max(0, [int][Math]::Ceiling(($ends - [DateTimeOffset]::UtcNow).TotalSeconds)) }
+        $name = [string]$w.name
+        if ($name.Length -gt 28) { $name = $name.Substring(0, 28) + '...' }
+        $appNotice.Text.Text = '{0} closes in {1}:{2:00}' -f $name, [int][Math]::Floor($left / 60), ($left % 60)
+        $slot = 0
+        if ($countdownForm.Visible) { $slot = 1 }
+        Show-Notice $appNotice $slot
+    } elseif ($appNotice.Form.Visible) {
+        $appNotice.Form.Hide()
+    }
+
+    # Warning over: ask those apps to close themselves (they can still save). The watchdog, which can't
+    # reach windows in this session, force-closes anything still running a few seconds later.
+    $closing = @()
+    if ($null -ne $u -and $u.PSObject.Properties['app_closing']) { $closing = @($u.app_closing) }
+    if ($closing.Count) {
+        foreach ($p in (Get-Process -ErrorAction SilentlyContinue)) {
+            try {
+                if ($script:closeRequested.ContainsKey($p.Id) -or -not $p.Path) { continue }
+                foreach ($c in $closing) {
+                    if ([string]::Equals([string]$c, $p.Path, [StringComparison]::OrdinalIgnoreCase)) {
+                        $script:closeRequested[$p.Id] = $true
+                        [void]$p.CloseMainWindow()
+                    }
+                }
+            } catch { }
+        }
+    } elseif ($script:closeRequested.Count) {
+        $script:closeRequested.Clear()
     }
 
     # Lock screen

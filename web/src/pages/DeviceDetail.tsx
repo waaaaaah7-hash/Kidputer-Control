@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type Device, type DeviceSettings, type EnrollmentCode, type LockRequest, type Message, type Override } from "../api";
-import EnrollmentInfo from "../EnrollmentInfo";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
+import InstallPanel, { ModeChoice } from "../InstallPanel";
+import AppsTab from "../device/AppsTab";
+import { UserCancelled } from "../cancel";
+import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
 import {
   DAYS,
@@ -24,8 +27,16 @@ interface Live {
   message: Message | null;
 }
 
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "apps", label: "Apps" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
 export default function DeviceDetail() {
   const { id = "" } = useParams();
+  const [params, setParams] = useSearchParams();
+  const tab: TabId = TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as TabId) : "overview";
   const live = useLoader<Live>(
     async () => {
       const [device, lock, overrides, message] = await Promise.all([api.device(id), api.lock(id), api.overrides(id), api.message(id)]);
@@ -50,20 +61,37 @@ export default function DeviceDetail() {
       </p>
       <StatusHeader device={device} />
       <ErrorNote error={live.error} />
-      <div className="columns">
-        <div className="stack">
-          <RightNow live={live.data} onChange={refresh} />
-          <MessagePanel device={device} message={live.data.message} onChange={refresh} />
-          <Card title="Recent activity" actions={<Link to={`/activity?device=${device.id}`}>All activity</Link>}>
-            {events.data ? <EventList events={events.data} /> : <Spinner />}
-          </Card>
-        </div>
-        <div className="stack">
-          <SchedulePanel device={device} onChange={refresh} />
-          <SettingsPanel device={device} onChange={refresh} />
-          <DevicePanel device={device} onChange={refresh} />
-        </div>
+      <div className="tabs" role="tablist" aria-label="Device sections">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "tab active" : "tab"}
+            onClick={() => setParams(t.id === "overview" ? {} : { tab: t.id }, { replace: true })}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
+      {tab === "apps" && <AppsTab device={device} />}
+      {tab === "overview" && (
+        <div className="columns">
+          <div className="stack">
+            <RightNow live={live.data} onChange={refresh} />
+            <MessagePanel device={device} message={live.data.message} onChange={refresh} />
+            <Card title="Recent activity" actions={<Link to={`/activity?device=${device.id}`}>All activity</Link>}>
+              {events.data ? <EventList events={events.data} /> : <Spinner />}
+            </Card>
+          </div>
+          <div className="stack">
+            <SchedulePanel device={device} onChange={refresh} />
+            <SettingsPanel device={device} onChange={refresh} />
+            <DevicePanel device={device} onChange={refresh} />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -78,13 +106,22 @@ function StatusHeader({ device }: { device: Device }) {
   if (s.clock_skew_seconds && Math.abs(s.clock_skew_seconds) > 300) warnings.push(`The PC's clock is off by ${Math.round(s.clock_skew_seconds / 60)} minutes.`);
   if (s.pin_locked_until && new Date(s.pin_locked_until).getTime() > Date.now())
     warnings.push(`PIN entry is locked after wrong attempts until ${formatTime(s.pin_locked_until)}.`);
+  if (device.mode === "managed" && s.child_is_admin)
+    warnings.push("Your child's Windows account is an administrator, so they could switch Kidputer Control off. Make it a standard account in Windows Settings, or switch this PC to Trusted mode.");
   return (
     <header className="device-head">
       <div>
-        <h1>{device.name}</h1>
+        <h1>
+          {device.name}{" "}
+          {device.mode === "trusted" && (
+            <span title="The child's account is an administrator: the schedule applies, but the child could switch it off.">
+              <Badge tone="info">Trusted</Badge>
+            </span>
+          )}
+        </h1>
         <p className="muted small">
           {device.enrolled
-            ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
+            ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"}${device.agent_update_available ? ` (updating to ${device.agent_update_available})` : ""} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
             : "Not installed yet"}
         </p>
       </div>
@@ -123,7 +160,7 @@ function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void
       setUntil("");
       await onChange();
     } catch (err) {
-      toast(errorMessage(err), "danger");
+      if (!(err instanceof UserCancelled)) toast(errorMessage(err), "danger");
     }
   }
 
@@ -325,6 +362,7 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
   const toast = useToast();
+  const reauth = useReauth();
   useEffect(() => {
     if (loaded.data) setForm(loaded.data);
   }, [loaded.data]);
@@ -343,7 +381,7 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
       return;
     }
     try {
-      await api.setPin(device.id, pin);
+      await reauth(() => api.setPin(device.id, pin));
       setPin("");
       setPin2("");
       toast("PIN saved. The PC picks it up on its next sync.");
@@ -361,6 +399,10 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
           <input type="checkbox" checked={form.enforcement_enabled} onChange={(e) => setForm({ ...form, enforcement_enabled: e.target.checked })} />
           Enforce the schedule on this PC
         </label>
+        <label className="inline switch">
+          <input type="checkbox" checked={form.auto_update} onChange={(e) => setForm({ ...form, auto_update: e.target.checked })} />
+          Update Kidputer Control on this PC automatically
+        </label>
         <div className="fields">
           <label>
             Countdown before locking (minutes)
@@ -377,6 +419,10 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
           <label>
             PIN lockout (minutes)
             <input type="number" min={1} max={1440} {...num("pin_lockout_minutes")} />
+          </label>
+          <label>
+            Alert me if the PC goes silent for (minutes, 0 = never)
+            <input type="number" min={0} max={1440} {...num("silent_alert_minutes")} />
           </label>
           <label>
             Check for changes every (seconds)
@@ -424,7 +470,7 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
 function DevicePanel({ device, onChange }: { device: Device; onChange: () => Promise<void> }) {
   const [name, setName] = useState(device.name);
   const [tz, setTz] = useState(device.timezone);
-  const [code, setCode] = useState<EnrollmentCode | null>(null);
+  const [mode, setMode] = useState(device.mode);
   const navigate = useNavigate();
 
   return (
@@ -443,12 +489,20 @@ function DevicePanel({ device, onChange }: { device: Device; onChange: () => Pro
           </select>
         </label>
       </div>
+      <ModeChoice mode={mode} onChange={setMode} />
+      {mode !== device.mode && (
+        <p className="muted small">
+          {mode === "trusted"
+            ? "Switching needs no reinstall. Make the child's account an administrator in Windows Settings if it isn't already."
+            : "Switching needs no reinstall. Make the child's account a standard user in Windows Settings so they can't switch Kidputer Control off."}
+        </p>
+      )}
       <div className="form-actions">
         <ActionButton
-          disabled={!name.trim() || (name === device.name && tz === device.timezone)}
+          disabled={!name.trim() || (name === device.name && tz === device.timezone && mode === device.mode)}
           success="Device updated"
           onClick={async () => {
-            await api.updateDevice(device.id, { name: name.trim(), timezone: tz });
+            await api.updateDevice(device.id, { name: name.trim(), timezone: tz, mode });
             await onChange();
           }}
         >
@@ -456,26 +510,19 @@ function DevicePanel({ device, onChange }: { device: Device; onChange: () => Pro
         </ActionButton>
       </div>
 
-      <h3>Install or reinstall</h3>
-      {code ? (
-        <EnrollmentInfo code={code} />
+      {device.enrolled ? (
+        <details className="reinstall">
+          <summary>Reinstall or move to another PC</summary>
+          <p className="muted small">Only needed to repair or move the installation: a new installer disconnects the PC that's installed now.</p>
+          <InstallPanel deviceId={device.id} enrolled initialMode={device.mode} onChange={onChange} />
+        </details>
       ) : (
-        <p className="muted small">
-          {device.enrolled
-            ? "Issuing a new code disconnects the PC that's installed now until it's reinstalled with the new code."
-            : "Issue a new code if the original one expired or was lost."}
-        </p>
+        <>
+          <h3>Install on the PC</h3>
+          <InstallPanel deviceId={device.id} enrolled={false} initialMode={device.mode} onChange={onChange} />
+        </>
       )}
       <div className="form-actions">
-        <ActionButton
-          confirm={device.enrolled ? "The PC will stop syncing until it's reinstalled with the new code. Continue?" : undefined}
-          onClick={async () => {
-            setCode(await api.reissueEnrollmentCode(device.id));
-            await onChange();
-          }}
-        >
-          New enrollment code
-        </ActionButton>
         <ActionButton
           variant="danger"
           confirm={`Delete "${device.name}" and all of its history? The PC stops receiving changes but keeps enforcing its last schedule until you run Uninstall.ps1 on it.`}

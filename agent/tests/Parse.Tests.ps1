@@ -14,6 +14,16 @@ foreach ($file in Get-ChildItem -Path $agentRoot -Recurse -Include '*.ps1', '*.p
     }
 }
 
+# Windows PowerShell 5.1 reads BOM-less scripts in the system code page, so a stray em dash or smart quote
+# would be garbled (or break parsing) on the PC. Keep shipped files plain ASCII.
+foreach ($file in Get-ChildItem -Path $agentRoot -Recurse -Include '*.ps1', '*.psm1', '*.cs') {
+    Test "ASCII only: $($file.FullName.Substring($agentRoot.Path.Length + 1))" {
+        $bytes = [IO.File]::ReadAllBytes($file.FullName)
+        $bad = @($bytes | Where-Object { $_ -gt 127 }).Count
+        if ($bad) { throw "$bad non-ASCII byte(s); Windows PowerShell 5.1 would misread them" }
+    }
+}
+
 Test 'native interop compiles' {
     $cs = Join-Path $agentRoot 'KidputerControl\Modules\KidputerControl.Native.cs'
     if (-not ('KcNative' -as [type])) { Add-Type -TypeDefinition ([IO.File]::ReadAllText($cs)) }

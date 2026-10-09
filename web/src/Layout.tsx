@@ -18,7 +18,9 @@ export default function Layout() {
           <NavLink to="/account">Account</NavLink>
         </nav>
         <div className="topbar-user">
-          <span className="muted small">{admin?.email}</span>
+          <span className="muted small" title={admin?.email}>
+            {admin?.name}
+          </span>
           <button type="button" className="btn btn-ghost" onClick={() => void logout()}>
             Sign out
           </button>

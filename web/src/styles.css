@@ -112,6 +112,12 @@ code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; fon
 .list { list-style: none; margin: 0.75rem 0 0; padding: 0; }
 .list-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-top: 1px solid var(--border); }
 
+.grow { flex: 1; min-width: 0; }
+.list-row .row { flex-shrink: 0; }
+.add-passkey { margin-top: 0.75rem; }
+.invite-link { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; }
+.wrap-anywhere { overflow-wrap: anywhere; }
+
 /* Badges & tones */
 .badge { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .tone-ok { background: var(--ok-bg); color: var(--ok); }
@@ -136,6 +142,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 }
 input:disabled { opacity: 0.5; }
 fieldset { border: 0; padding: 0; margin: 0; }
+.mode-choice legend { font-weight: 600; margin-bottom: 0.25rem; }
+.mode-choice label.inline { align-items: flex-start; }
+.mode-choice input[type=radio] { margin-top: 0.3rem; }
+.block { display: block; }
 .switch { font-weight: 600; }
 
 .btn {
@@ -176,12 +186,22 @@ fieldset { border: 0; padding: 0; margin: 0; }
 .qr { align-self: center; border-radius: 8px; background: #fff; padding: 6px; }
 .secret { user-select: all; overflow-wrap: anywhere; }
 
+.divider { display: flex; align-items: center; gap: 0.75rem; color: var(--muted); font-size: 0.85rem; }
+.divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+
 /* Enrollment */
 .enroll-code {
   font: 600 1.6rem ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: 0.08em; text-align: center;
   background: var(--surface-2); border-radius: 10px; padding: 0.6rem; user-select: all;
 }
 .command { background: var(--surface-2); padding: 0.75rem; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+
+/* Install panel */
+.steps { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.steps-done { background: var(--ok-bg); border-radius: 10px; padding: 0.6rem 0.75rem 0.6rem 2rem; }
+details.manual, details.reinstall { border-top: 1px solid var(--border); padding-top: 0.6rem; margin-top: 0.75rem; }
+details > summary { cursor: pointer; color: var(--primary); font-weight: 600; }
+details[open] > summary { margin-bottom: 0.6rem; }
 
 /* Dialog & toasts */
 .dialog {
@@ -207,3 +227,12 @@ fieldset { border: 0; padding: 0; margin: 0; }
   .event { flex-direction: column; gap: 0.1rem; }
   .event-meta { text-align: left; }
 }
+.level-select { width: auto; flex: none; }
+.tabs { display: flex; gap: 0.25rem; margin: 0.25rem 0 1rem; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tab {
+  font: inherit; background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; color: var(--muted);
+  cursor: pointer; white-space: nowrap;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--primary); font-weight: 600; }
+.list + label.inline { margin-top: 0.6rem; }

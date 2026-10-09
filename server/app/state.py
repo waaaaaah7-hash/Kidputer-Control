@@ -10,6 +10,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .agent_bundle import load_bundle
+from .commands import pending_commands, snapshot_live_until
+from .config import get_settings
 from .models import Device, LockRequest, Message, Override, ScheduleEntry
 
 # How far ahead lock windows are precomputed. The agent falls back to evaluating the weekly schedule
@@ -65,6 +68,7 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
         "device_id": str(device.id),
         "name": device.name,
         "timezone": device.timezone,
+        "mode": device.mode,
         "enforcement_enabled": s.enforcement_enabled,
         "countdown_seconds": s.countdown_seconds,
         "poll_interval_seconds": s.poll_interval_seconds,
@@ -86,7 +90,17 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
         "overrides": [{"id": str(o.id), "starts_at": _iso(o.starts_at), "ends_at": _iso(o.ends_at)} for o in overrides],
         "message": {"id": str(message.id), "body": message.body, "mode": message.mode} if message else None,
         "immediate_lock": {"id": str(lock.id), "reason": lock.reason, "requested_at": _iso(lock.created_at)} if lock else None,
+        "show_window_titles": s.show_window_titles,
+        "live_until": snapshot_live_until(device, now),
+        "commands": [{"id": str(c.id), "kind": c.kind, "payload": c.payload} for c in pending_commands(db, device, now)],
+        "agent_update": _agent_update(s.auto_update),
     }
+
+
+def _agent_update(enabled: bool) -> dict[str, str] | None:
+    """The agent version this PC should be running, if it updates automatically."""
+    bundle = load_bundle(get_settings().agent_dir) if enabled else None
+    return {"version": bundle.version, "bundle": bundle.fingerprint} if bundle else None
 
 
 def state_etag(state: dict[str, Any]) -> str:

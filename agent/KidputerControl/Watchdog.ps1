@@ -22,6 +22,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Common.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Apps.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Update.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $DataRoot
 
 # --- Single instance ------------------------------------------------------------------------------------
@@ -35,6 +37,7 @@ if (-not $createdNew) {
 }
 
 Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $InstallRoot 'Modules\KidputerControl.Native.cs')))
+try { [KcShutdownWatcher]::Start() } catch { Write-KcLog -Level warning -Message "Shutdown watcher unavailable: $($_.Exception.Message)" }
 
 $agentCfg = Read-KcJsonFile -Path $paths.AgentFile
 if ($null -eq $agentCfg) { Write-KcLog -Level error -Message 'agent.json missing; reinstall required'; exit 1 }
@@ -55,6 +58,13 @@ $uiCmdLine = '"{0}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -STA -Win
 $ui = @{ Pid = 0; StartTime = $null; SessionId = [KcNative]::NoSession; Launches = New-Object System.Collections.Queue; EverStarted = $false }
 $sync = @{ Phase = 'state'; NextAt = [DateTimeOffset]::MinValue; Failures = 0; LastOkAt = $null; Offline = $true; Unauthorized = $false; SkewReportedAt = [DateTimeOffset]::MinValue; SkewSeconds = $null }
 $tamper = @{ NextAt = [DateTimeOffset]::MinValue; Problems = @() }
+$adminCheck = @{ NextAt = [DateTimeOffset]::MinValue; IsAdmin = $false }
+$power = @{ LastTick = $null; ShutdownReported = $false }
+$reports = @{ ProcessesAt = [DateTimeOffset]::MinValue }
+$update = @{ LastAttempt = [DateTimeOffset]::MinValue; Bundle = $null }
+try { $update.Bundle = (Get-KcLocalBundle -Root $InstallRoot).Fingerprint } catch { Write-KcLog -Level warning -Message "Can't fingerprint the installed files: $($_.Exception.Message)" }
+$appStops = New-Object System.Collections.ArrayList   # apps being closed: warning shown, then closed
+$script:childSession = $null
 $lastMode = $null
 $lastUiJson = $null
 $pinResult = $null
@@ -65,7 +75,14 @@ function Save-Local {
     Write-KcJsonFile -Path $paths.LocalFile -Object $local
 }
 
+function Test-Live {
+    <# A parent has a live view open, or a command is waiting: check in every few seconds. #>
+    $until = ConvertTo-KcDate (Get-KcProp $state 'live_until')
+    ($null -ne $until -and (Get-KcNow) -lt $until) -or @(Get-KcProp $state 'commands' @()).Count -gt 0 -or $appStops.Count -gt 0
+}
+
 function Get-PollSeconds {
+    if (Test-Live) { return 3 }
     $s = [int](Get-KcProp $state 'poll_interval_seconds' 30)
     [Math]::Min([Math]::Max($s, 5), 3600)
 }
@@ -75,6 +92,14 @@ function Test-ChildIsAdmin {
         $admins = Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop
         return [bool]($admins | Where-Object { $_.SID -and $_.SID.Value -eq $childSid })
     } catch { return $false }
+}
+
+function Update-ChildAdminStatus {
+    <# Re-checked every 10 minutes; the dashboard compares it with the PC's mode (Managed or Trusted). #>
+    $now = Get-KcNow
+    if ($now -lt $adminCheck.NextAt) { return }
+    $adminCheck.NextAt = $now.AddMinutes(10)
+    $adminCheck.IsAdmin = Test-ChildIsAdmin
 }
 
 # --- UI agent supervision -----------------------------------------------------------------------------------
@@ -101,7 +126,9 @@ function Update-UiAgent {
     $sid = $null
     if ($session -ne [KcNative]::NoSession) { $sid = [KcNative]::GetSessionUserSid($session) }
     $script:consoleIsChild = ($null -ne $sid) -and ($sid -eq $childSid)
+    $script:childSession = $null
     if (-not $script:consoleIsChild) { return }   # enforcement applies to the child's account only
+    $script:childSession = [int]$session
 
     if ((Test-UiAlive) -and $ui.SessionId -eq $session) { return }
 
@@ -222,6 +249,7 @@ function Invoke-SyncStep {
             $sync.Failures = 0
             $sync.LastOkAt = $now
             if ($r.Changed) { $script:state = $r.State; Write-KcLog -Message 'New configuration received' }
+            if ($script:state) { Invoke-AgentUpdate }
             if ($r.ServerTime) {
                 $sync.SkewSeconds = [int]($now - $r.ServerTime).TotalSeconds
                 if ([Math]::Abs($sync.SkewSeconds) -gt 300 -and ($now - $sync.SkewReportedAt).TotalHours -ge 6) {
@@ -233,7 +261,25 @@ function Invoke-SyncStep {
         }
         'events' {
             [void](Send-KcQueuedEvents -BaseUrl $apiUrl -Token $token -MaxBatches 1)
-            if ((Get-KcQueuedEvents).Count -eq 0) { $sync.Phase = 'heartbeat' }
+            if ((Get-KcQueuedEvents).Count -eq 0) { $sync.Phase = 'reports' }
+        }
+        'reports' {
+            # At most one upload per tick: a command result, else a due report.
+            if (@($local.command_results).Count) {
+                $first = @($local.command_results)[0]
+                if (Send-KcCommandResult -BaseUrl $apiUrl -Token $token -Result $first) {
+                    $local.command_results = @(@($local.command_results) | Select-Object -Skip 1)
+                    $script:localDirty = $true
+                }
+                return
+            }
+            $sync.Phase = 'heartbeat'
+            $every = 600
+            if (Test-Live) { $every = 5 }
+            if (($now - $reports.ProcessesAt).TotalSeconds -ge $every) {
+                $reports.ProcessesAt = $now
+                [void](Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'processes' -Data (Get-ProcessReport))
+            }
         }
         'heartbeat' {
             [void](Send-KcHeartbeat -BaseUrl $apiUrl -Token $token -Status (Get-Status))
@@ -257,10 +303,122 @@ function Get-Status {
         queued_events         = (Get-KcQueuedEvents).Count
         clock_skew_seconds    = $sync.SkewSeconds
         pin_locked_until      = $local.pin_locked_until
+        child_is_admin        = $adminCheck.IsAdmin
+        agent_bundle          = $update.Bundle
     }
     if ($d -and $d.UnlockAt) { $s.unlock_at = ConvertTo-KcIso $d.UnlockAt }
     if ($d -and $d.OverrideEndsAt) { $s.override_ends_at = ConvertTo-KcIso $d.OverrideEndsAt }
     $s
+}
+
+# --- Apps: reports and closing apps from the dashboard ------------------------------------------------------------
+
+function Get-ChildProcesses {
+    if ($null -eq $script:childSession) { return , @() }
+    Get-KcSessionProcesses -SessionId $script:childSession -IncludeTitles:([bool](Get-KcProp $state 'show_window_titles' $false))
+}
+
+function Get-ProcessReport {
+    @{ child_signed_in = ($null -ne $script:childSession); processes = (ConvertTo-KcProcessReport -Processes (Get-ChildProcesses)) }
+}
+
+function Complete-Command {
+    param([string]$Id, [string]$Status, [hashtable]$Result)
+    $local.handled_commands = Add-KcBoundedItem -List $local.handled_commands -Item $Id -Max 200
+    $local.command_results = @(@($local.command_results) + @([pscustomobject]@{ id = $Id; status = $Status; result = $Result }))
+    $script:localDirty = $true
+    $sync.Phase = 'events'
+    $sync.NextAt = Get-KcNow
+}
+
+function Start-AppStop {
+    param($Command)
+    $payload = Get-KcProp $Command 'payload'
+    $path = [string](Get-KcProp $payload 'path' '')
+    $name = [string](Get-KcProp $payload 'name' 'the app')
+    if ($name.Length -gt 100) { $name = $name.Substring(0, 100) }
+    $grace = [Math]::Min([Math]::Max([int](Get-KcProp $payload 'grace_seconds' 60), 0), 600)
+    $targets = Select-KcProcessesToStop -Processes (Get-ChildProcesses) -Path $path -InstallRoot $InstallRoot
+    if ($targets.Count -eq 0) {
+        Complete-Command -Id $Command.id -Status 'failed' -Result @{ reason = 'not_running'; message = "$name isn't running on the PC." }
+        return
+    }
+    $now = Get-KcNow
+    [void]$appStops.Add(@{ CommandId = [string]$Command.id; Path = $path; Name = $name; EndsAt = $now.AddSeconds($grace); ForceAt = $null })
+    Add-KcEvent -Type 'app.stop_warning' -Message "Closing $name in $grace seconds" -Data @{ path = $path; grace_seconds = $grace }
+}
+
+function Update-AppStops {
+    <#
+        Warning over: the UI agent (in the child's session, where it can reach the app's windows) asks
+        the app to close so it can save; whatever is still running 5 seconds later is force-closed.
+    #>
+    $now = Get-KcNow
+    foreach ($stop in @($appStops)) {
+        if ($now -lt $stop.EndsAt) { continue }
+        $targets = Select-KcProcessesToStop -Processes (Get-ChildProcesses) -Path $stop.Path -InstallRoot $InstallRoot
+        if ($null -eq $stop.ForceAt) {
+            $stop.ForceAt = $now.AddSeconds(5)
+            $stop.Count = $targets.Count
+            continue
+        }
+        if ($now -lt $stop.ForceAt -and $targets.Count) { continue }
+        $forced = 0
+        foreach ($t in $targets) { try { Stop-Process -Id $t.Id -Force -ErrorAction Stop; $forced++ } catch { } }
+        Add-KcEvent -Type 'app.stopped' -Message "$($stop.Name) was closed" -Data @{ path = $stop.Path; forced = $forced }
+        Complete-Command -Id $stop.CommandId -Status 'done' -Result @{ closed = [Math]::Max([int]$stop.Count, $forced); forced = $forced }
+        $appStops.Remove($stop)
+    }
+}
+
+function Invoke-Commands {
+    <# Carry out new commands from the dashboard (each once; ids are remembered across restarts). #>
+    foreach ($cmd in @(Get-KcProp $state 'commands' @())) {
+        $id = [string](Get-KcProp $cmd 'id' '')
+        if (-not $id -or @($local.handled_commands) -contains $id) { continue }
+        if (@($appStops | Where-Object { $_.CommandId -eq $id }).Count) { continue }
+        switch ([string](Get-KcProp $cmd 'kind' '')) {
+            'stop_app' { Start-AppStop -Command $cmd }
+            default { Complete-Command -Id $id -Status 'failed' -Result @{ reason = 'unsupported'; message = 'This PC needs a newer version of Kidputer Control for that.' } }
+        }
+    }
+}
+
+# --- Auto-update --------------------------------------------------------------------------------------------------
+
+function Invoke-AgentUpdate {
+    <#
+        The server ships a different agent bundle: download it, verify every file, swap it in, record the
+        new tamper manifest, and restart. At most one attempt an hour; a failed attempt changes nothing.
+    #>
+    $want = Get-KcProp $state 'agent_update'
+    $bundle = [string](Get-KcProp $want 'bundle' '')
+    if (-not $bundle -or -not $update.Bundle -or $bundle -eq $update.Bundle) { return }
+    $now = Get-KcNow
+    if (($now - $update.LastAttempt).TotalHours -lt 1) { return }
+    $update.LastAttempt = $now
+    $from = Get-KcAgentVersion
+    $to = [string](Get-KcProp $want 'version' '?')
+    $stagingRoot = Join-Path $paths.Config 'update'
+    try {
+        Write-KcLog -Message "Updating agent $from -> $to ($bundle)"
+        $staged = Receive-KcAgentUpdate -BaseUrl $apiUrl -Token $token -Expected $bundle -StagingRoot $stagingRoot
+        Install-KcAgentUpdate -StagingDir $staged -InstallRoot $InstallRoot -BackupDir (Join-Path $stagingRoot 'previous')
+        Write-KcJsonFile -Path $paths.Manifest -Object ([ordered]@{ created_at = (ConvertTo-KcIso (Get-KcNow)); files = (Get-KcFileHashes -InstallRoot $InstallRoot) })
+        Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+    } catch {
+        Add-KcEvent -Type 'agent.update_failed' -Severity warning -Message "Update to $to failed: $($_.Exception.Message)" -Data @{ version = $to }
+        return
+    }
+    Add-KcEvent -Type 'agent.updated' -Message "Kidputer Control updated from $from to $to" -Data @{ from = $from; to = $to; bundle = $bundle }
+    [void](Send-KcQueuedEvents -BaseUrl $apiUrl -Token $token -MaxBatches 1)
+    # Start again on the new files: the scheduled task's every-minute trigger would too; this is faster.
+    try {
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') -WindowStyle Hidden `
+            -ArgumentList '/c timeout /t 3 /nobreak >nul & schtasks /run /tn "\KidputerControl\Watchdog"'
+    } catch { }
+    Stop-StrayUiAgents
+    exit 0
 }
 
 # --- Tamper -------------------------------------------------------------------------------------------------------
@@ -326,6 +484,8 @@ function Update-Enforcement {
         pin_result        = $script:pinResult
         message           = $(if ($msg) { [ordered]@{ id = [string]$msg.id; body = [string]$msg.body; mode = [string]$msg.mode } } else { $null })
         device_name       = Get-KcProp $state 'name'
+        app_warnings      = @($appStops | Where-Object { $null -eq $_.ForceAt } | ForEach-Object { [ordered]@{ name = $_.Name; ends_at = (ConvertTo-KcIso $_.EndsAt) } })
+        app_closing       = @($appStops | Where-Object { $null -ne $_.ForceAt } | ForEach-Object { $_.Path })
     }
     $json = ConvertTo-Json -InputObject $uiState -Depth 5 -Compress
     if ($json -ne $script:lastUiJson) {
@@ -334,22 +494,57 @@ function Update-Enforcement {
     }
 }
 
+# --- Power: shutdown and sleep -------------------------------------------------------------------------------------
+
+function Update-PowerEvents {
+    <#
+        Tell the server why the PC is about to go quiet, so parents get "turned off" rather than a
+        "PC went silent" alarm. Shutdown: flush the event right away (Windows gives us a few seconds).
+        Sleep: the loop simply stops; a long gap between ticks means the PC was asleep.
+    #>
+    $now = Get-KcNow
+    if ($power.LastTick -and ($now - $power.LastTick).TotalSeconds -gt 60) {
+        Add-KcEvent -Type 'pc.resumed' -Message "PC woke up (asleep since $(ConvertTo-KcIso $power.LastTick))" -Data @{ asleep_from = (ConvertTo-KcIso $power.LastTick) }
+        $sync.Phase = 'events'
+        $sync.NextAt = $now
+    }
+    $power.LastTick = $now
+    $ending = $false
+    try { $ending = [KcShutdownWatcher]::Ending } catch { }
+    if ($ending -and -not $power.ShutdownReported) {
+        $power.ShutdownReported = $true
+        Add-KcEvent -Type 'pc.shutting_down' -Message 'Windows is shutting down or restarting'
+        if ($token -and $apiUrl) { [void](Send-KcQueuedEvents -BaseUrl $apiUrl -Token $token -MaxBatches 1) }
+    }
+}
+
+function Get-KcBootTime {
+    try { return ConvertTo-KcIso ([DateTimeOffset](Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime) } catch { return $null }
+}
+
 # --- Main loop -------------------------------------------------------------------------------------------------------
 
-Add-KcEvent -Type 'agent.started' -Message "Watchdog $(Get-KcAgentVersion) started on $([Environment]::MachineName)"
+# boot_time lets the server tell "the PC was off" from "Kidputer Control was stopped while Windows ran".
+Add-KcEvent -Type 'agent.started' -Message "Watchdog $(Get-KcAgentVersion) started on $([Environment]::MachineName)" -Data @{ boot_time = (Get-KcBootTime) }
 if ($null -eq $token) { Add-KcEvent -Type 'agent.unauthorized' -Severity critical -Message 'No device token; enforcing from cache only' }
-if (Test-ChildIsAdmin) {
+Update-ChildAdminStatus
+# In Trusted mode an administrator child is expected; in Managed mode it's a hole in enforcement.
+if ($adminCheck.IsAdmin -and (Get-KcProp $state 'mode' 'managed') -ne 'trusted') {
     Add-KcEvent -Type 'agent.child_is_admin' -Severity critical -Message 'The monitored account is a local administrator and could disable enforcement'
 }
 
 while ($true) {
     try {
+        Update-PowerEvents
         Invoke-Inbox -Decision $script:currentDecision
         Update-Enforcement
         if ($script:localDirty) { Save-Local; $script:localDirty = $false }
         Update-UiAgent
+        Invoke-Commands
+        Update-AppStops
         Invoke-SyncStep
         Invoke-TamperCheck
+        Update-ChildAdminStatus
     } catch {
         Write-KcLog -Level error -Message ("Watchdog loop error: {0} {1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
         Start-Sleep -Seconds 2

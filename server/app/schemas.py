@@ -1,9 +1,18 @@
 import uuid
 from datetime import datetime, time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 # --- Auth ---------------------------------------------------------------------
 
@@ -20,6 +29,8 @@ class LoginResponse(BaseModel):
 
 class MfaRequest(BaseModel):
     code: str = Field(max_length=16)
+    # "Remember this device": later password sign-ins on this browser skip the code.
+    remember: bool = False
 
 
 class TotpSetupResponse(BaseModel):
@@ -33,6 +44,112 @@ class AdminOut(BaseModel):
     id: uuid.UUID
     email: str
     totp_enabled: bool
+    # Shown in the activity log; `name` falls back to the start of the email when no name is set.
+    display_name: str | None
+    name: str
+
+
+# A parent's name as shown to the other parents; surrounding spaces don't count.
+DisplayName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+
+
+class ProfileUpdate(BaseModel):
+    display_name: DisplayName
+
+
+class ParentOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    name: str
+    totp_enabled: bool
+    passkeys: int
+    created_at: datetime
+    last_active_at: datetime | None
+    you: bool
+
+
+class InviteCreate(BaseModel):
+    email: EmailStr
+
+
+class InviteOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    invited_by: str | None
+    created_at: datetime
+    expires_at: datetime
+
+
+class InviteCreated(BaseModel):
+    invite: InviteOut
+    # Shown once: the secret part is after "#", so it never reaches the server or its logs when opened.
+    link: str
+
+
+class InviteToken(BaseModel):
+    token: str = Field(min_length=10, max_length=100)
+
+
+class InviteInfo(BaseModel):
+    email: str
+    invited_by: str | None
+    expires_at: datetime
+
+
+class InviteAccept(InviteToken):
+    display_name: DisplayName
+    password: str = Field(min_length=12, max_length=1024)
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    last_seen_at: datetime | None
+    expires_at: datetime
+    ip: str | None
+    user_agent: str | None
+    auth_method: str | None
+    remembered: bool
+    current: bool
+
+
+class RememberedDeviceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_agent: str | None
+    ip: str | None
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime
+    current: bool = False
+
+
+class PasskeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    backed_up: bool
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class PasskeyRename(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class PasskeyOptionsOut(BaseModel):
+    challenge_id: uuid.UUID
+    # PublicKeyCredentialCreationOptionsJSON / RequestOptionsJSON, passed straight to the browser.
+    options: dict[str, Any]
+
+
+class PasskeyVerifyRequest(BaseModel):
+    challenge_id: uuid.UUID
+    # The browser's credential as JSON (navigator.credentials.create/get, serialized).
+    credential: dict[str, Any]
+    name: str | None = Field(default=None, max_length=100)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -51,9 +168,13 @@ def _check_tz(value: str) -> str:
     return value
 
 
+DeviceMode = Literal["managed", "trusted"]
+
+
 class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     timezone: str = "UTC"
+    mode: DeviceMode = "managed"
 
     _tz = field_validator("timezone")(_check_tz)
 
@@ -61,6 +182,7 @@ class DeviceCreate(BaseModel):
 class DeviceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     timezone: str | None = None
+    mode: DeviceMode | None = None
 
     @field_validator("timezone")
     @classmethod
@@ -80,12 +202,24 @@ class DeviceOut(BaseModel):
     last_seen_at: datetime | None
     last_status: dict[str, Any] | None
     created_at: datetime
+    mode: DeviceMode
+    # The agent version this server ships, when the PC runs a different one (None = up to date or unknown).
+    agent_update_available: str | None = None
 
 
 class EnrollmentCodeOut(BaseModel):
     device_id: uuid.UUID
     enrollment_code: str
     expires_at: datetime
+
+
+class InstallerRequest(BaseModel):
+    # Windows account to enforce; blank = the installer asks on the PC.
+    child_user: str | None = Field(default=None, max_length=104, pattern=r"^[^\x00-\x1f\"/:*?<>|]+$")
+    # Required when the PC is already installed: a new code disconnects it until it's reinstalled.
+    replace: bool = False
+    # Also saved as the device's mode. Trusted lets the installer accept an administrator child account.
+    mode: DeviceMode | None = None
 
 
 class ScheduleEntryIn(BaseModel):
@@ -119,6 +253,9 @@ class SettingsIn(BaseModel):
     pin_max_attempts: int | None = Field(default=None, ge=1, le=20)
     pin_lockout_minutes: int | None = Field(default=None, ge=1, le=1440)
     pin_override_minutes: int | None = Field(default=None, ge=1, le=1440)
+    silent_alert_minutes: int | None = Field(default=None, ge=0, le=1440)
+    show_window_titles: bool | None = None
+    auto_update: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -131,6 +268,9 @@ class SettingsOut(BaseModel):
     pin_max_attempts: int
     pin_lockout_minutes: int
     pin_override_minutes: int
+    silent_alert_minutes: int
+    show_window_titles: bool
+    auto_update: bool
     updated_at: datetime
 
 
@@ -206,6 +346,7 @@ class EventOut(BaseModel):
     occurred_at: datetime
     received_at: datetime
     actor_user_id: uuid.UUID | None
+    actor_name: str | None = None
 
 
 # --- Agent protocol -------------------------------------------------------------
@@ -243,3 +384,8 @@ class AgentEventsOut(BaseModel):
 class HeartbeatIn(BaseModel):
     agent_version: str | None = Field(default=None, max_length=32)
     status: dict[str, Any] = Field(default_factory=dict)
+
+
+class CommandResultIn(BaseModel):
+    status: Literal["done", "failed"]
+    result: dict[str, Any] | None = None

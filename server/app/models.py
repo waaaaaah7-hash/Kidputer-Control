@@ -10,12 +10,13 @@ Maps the product's configuration concepts onto relational tables:
 """
 
 import uuid
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -56,8 +57,31 @@ class AdminUser(Base):
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
+    # Shown in the activity log ("Mum", "Dad"); falls back to the start of the email address.
+    display_name: Mapped[str | None] = mapped_column(String(60))
+    # A removed parent: kept (not deleted) so the activity log still says who did what.
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (Index("uq_admin_users_email_lower", func.lower(email), unique=True),)
+
+    @property
+    def name(self) -> str:
+        return self.display_name or self.email.split("@", 1)[0]
+
+
+class AdminInvite(Base):
+    """A one-time link that lets another parent create their own account."""
+
+    __tablename__ = "admin_invites"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AdminSession(Base):
@@ -73,10 +97,67 @@ class AdminSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ip: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(512))
+    # How this session was signed in: 'password_totp', 'passkey', 'password_remembered' or 'password'.
+    auth_method: Mapped[str | None] = mapped_column(String(24))
+    # Last time the parent proved it's them with a second factor (TOTP code or passkey). Risky actions
+    # require this to be recent; a remembered-device sign-in starts without it.
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    remembered_device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("remembered_devices.id", ondelete="SET NULL"))
 
     user: Mapped[AdminUser] = relationship()
 
     __table_args__ = (CheckConstraint("stage IN ('mfa_pending', 'active')", name="ck_admin_sessions_stage"),)
+
+
+class Passkey(Base):
+    """A WebAuthn credential (passkey) the parent can sign in with instead of password + TOTP."""
+
+    __tablename__ = "passkeys"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sign_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    transports: Mapped[list | None] = mapped_column(JSONB)
+    # True for passkeys that sync between devices (iCloud Keychain, Google Password Manager, ...).
+    backed_up: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RememberedDevice(Base):
+    """A browser the parent ticked "Remember this device" on: password sign-ins there skip the TOTP code."""
+
+    __tablename__ = "remembered_devices"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _created_at()
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WebAuthnChallenge(Base):
+    """One-time challenge for a passkey ceremony; deleted when used, expires after a few minutes."""
+
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    challenge: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # 'register', 'login' or 'reverify'
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Set for 'register' and 'reverify' (the signed-in parent); NULL for 'login'.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    __table_args__ = (CheckConstraint("purpose IN ('register', 'login', 'reverify')", name="ck_webauthn_challenge_purpose"),)
 
 
 class Device(Base):
@@ -99,6 +180,19 @@ class Device(Base):
     # Most recent status reported by the agent's heartbeat (locked, tamper state, ...).
     last_status: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _created_at()
+    # 'managed': the child has a standard Windows account and can't switch enforcement off.
+    # 'trusted': the child is an administrator; enforcement works day to day, but the safety net is
+    # notifications (installs, "PC went silent").
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'managed'"))
+    # "PC went silent": set when the PC stops checking in while expected online; cleared on contact.
+    silent_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Start of the most recent silence, kept after contact resumes so the agent's restart report can
+    # tell "the PC was off" from "Kidputer Control was stopped while Windows was running".
+    last_silence_started: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # While a parent has a live view open (running apps, files), the PC checks in every few seconds.
+    live_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (CheckConstraint("mode IN ('managed', 'trusted')", name="ck_devices_mode"),)
 
     settings: Mapped["DeviceSettings"] = relationship(back_populates="device", uselist=False, cascade="all, delete-orphan")
     schedule: Mapped[list["ScheduleEntry"]] = relationship(
@@ -121,6 +215,12 @@ class DeviceSettings(Base):
     pin_lockout_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("15"))
     # Minutes of access a correct lock-screen PIN grants.
     pin_override_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("60"))
+    # Alert parents when the PC hasn't checked in for this long. 0 = off.
+    silent_alert_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("15"))
+    # Window titles can reveal browser tabs or document names, so the PC only reports them if asked.
+    show_window_titles: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Install new agent versions automatically when the server has them.
+    auto_update: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     device: Mapped[Device] = relationship(back_populates="settings")
@@ -130,6 +230,7 @@ class DeviceSettings(Base):
         CheckConstraint("poll_interval_seconds BETWEEN 5 AND 3600", name="ck_settings_poll"),
         CheckConstraint("pin_max_attempts BETWEEN 1 AND 20", name="ck_settings_pin_attempts"),
         CheckConstraint("pin_override_minutes BETWEEN 1 AND 1440", name="ck_settings_pin_override"),
+        CheckConstraint("silent_alert_minutes BETWEEN 0 AND 1440", name="ck_settings_silent_alert"),
     )
 
 
@@ -246,3 +347,106 @@ class ActivityEvent(Base):
         Index("ix_events_device_time", "device_id", "occurred_at"),
         Index("ix_events_type_time", "event_type", "occurred_at"),
     )
+
+
+class NotificationSettings(Base):
+    """How and when one parent wants to hear about things."""
+
+    __tablename__ = "notification_settings"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), primary_key=True)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # {category: "immediate" | "digest" | "off"}; categories not listed use their default.
+    levels: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    # Immediate alerts wait until quiet hours end. Both NULL = no quiet hours.
+    quiet_start: Mapped[time | None] = mapped_column(Time)
+    quiet_end: Mapped[time | None] = mapped_column(Time)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'UTC'"))
+    digest_hour: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("18"))
+    last_digest_on: Mapped[date | None] = mapped_column(Date)
+
+    __table_args__ = (CheckConstraint("digest_hour BETWEEN 0 AND 23", name="ck_notification_digest_hour"),)
+
+
+class PushSubscription(Base):
+    """A browser or installed phone app that receives push notifications (Web Push)."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(200), nullable=False)
+    auth: Mapped[str] = mapped_column(String(100), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = _created_at()
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Notification(Base):
+    """One thing to tell one parent about. Sent alone or grouped (immediate), or in the daily digest."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("activity_events.id", ondelete="SET NULL"))
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = _created_at()
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("level IN ('immediate', 'digest')", name="ck_notifications_level"),
+        Index("ix_notifications_unsent", "user_id", "level", postgresql_where=text("sent_at IS NULL")),
+        Index("ix_notifications_user_time", "user_id", "created_at"),
+    )
+
+
+class AppSecret(Base):
+    """Server-generated secrets that must survive restarts (the Web Push signing key)."""
+
+    __tablename__ = "app_secrets"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class DeviceCommand(Base):
+    """Something a parent asked the PC to do (close an app, list a folder, ...). Delivered in the state
+    snapshot; the agent reports the result."""
+
+    __tablename__ = "device_commands"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'pending'"))
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'done', 'failed')", name="ck_device_commands_status"),
+        Index("ix_device_commands_pending", "device_id", postgresql_where=text("status = 'pending'")),
+    )
+
+
+class DeviceReport(Base):
+    """The latest copy of something the PC reports in bulk: running processes, drives, scans, ..."""
+
+    __tablename__ = "device_reports"
+
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

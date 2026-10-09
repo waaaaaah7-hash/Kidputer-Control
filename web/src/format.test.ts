@@ -1,5 +1,5 @@
 import type { Device } from "./api";
-import { deviceStatus, describeWindow, relativeTime, toEntries, toRows } from "./format";
+import { authMethodLabel, describeUserAgent, deviceStatus, describeWindow, relativeTime, toEntries, toRows } from "./format";
 
 const NOW = Date.parse("2026-01-12T22:00:00Z");
 
@@ -14,6 +14,8 @@ function device(overrides: Partial<Device> = {}): Device {
     last_seen_at: "2026-01-12T21:59:40Z",
     last_status: { mode: "none", reason: "none" },
     created_at: "2026-01-01T00:00:00Z",
+    mode: "managed",
+    agent_update_available: null,
     ...overrides,
   };
 }
@@ -73,5 +75,23 @@ describe("relativeTime", () => {
     expect(relativeTime(null)).toBe("never");
     expect(relativeTime("2026-01-12T21:59:50Z", NOW)).toBe("just now");
     expect(relativeTime("2026-01-12T21:30:00Z", NOW)).toMatch(/30 minutes ago/);
+  });
+});
+
+describe("describeUserAgent", () => {
+  it("names common browsers and systems", () => {
+    expect(describeUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36")).toBe("Chrome on Windows");
+    expect(describeUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36 Edg/141.0")).toBe("Edge on Windows");
+    expect(describeUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")).toBe("Safari on iPhone");
+    expect(describeUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0 Mobile/15E148 Safari/604.1")).toBe("Chrome on iPhone");
+    expect(describeUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:131.0) Gecko/20100101 Firefox/131.0")).toBe("Firefox on Mac");
+    expect(describeUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36")).toBe("Chrome on Android");
+    expect(describeUserAgent(null)).toBe("Unknown device");
+  });
+
+  it("labels sign-in methods", () => {
+    expect(authMethodLabel("passkey")).toBe("Passkey");
+    expect(authMethodLabel("password_remembered")).toBe("Password, remembered device");
+    expect(authMethodLabel(null)).toBe("Signed in");
   });
 });

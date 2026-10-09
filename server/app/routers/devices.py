@@ -3,19 +3,25 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from ..agent_bundle import load_bundle
 from ..audit import log_admin
-from ..deps import AdminDep, DbDep, SettingsDep, utcnow
-from ..models import ActivityEvent, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
+from ..config import get_settings
+from ..installer import build_installer_zip
+from ..deps import AdminDep, DbDep, SettingsDep, VerifiedAdminDep, utcnow
+from ..models import ActivityEvent, AdminUser, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
 from ..schemas import (
     DeviceCreate,
     DeviceOut,
     DeviceUpdate,
     EnrollmentCodeOut,
     EventOut,
+    InstallerRequest,
     LockIn,
     LockOut,
     MessageIn,
@@ -51,7 +57,17 @@ def _device_out(d: Device) -> DeviceOut:
         last_seen_at=d.last_seen_at,
         last_status=d.last_status,
         created_at=d.created_at,
+        mode=d.mode,
+        agent_update_available=_update_available(d),
     )
+
+
+def _update_available(d: Device) -> str | None:
+    bundle = load_bundle(get_settings().agent_dir)
+    running = (d.last_status or {}).get("agent_bundle")
+    if bundle is None or not running or running == bundle.fingerprint:
+        return None
+    return bundle.version
 
 
 def _settings_out(s: DeviceSettings) -> SettingsOut:
@@ -63,6 +79,9 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         pin_max_attempts=s.pin_max_attempts,
         pin_lockout_minutes=s.pin_lockout_minutes,
         pin_override_minutes=s.pin_override_minutes,
+        silent_alert_minutes=s.silent_alert_minutes,
+        show_window_titles=s.show_window_titles,
+        auto_update=s.auto_update,
         updated_at=s.updated_at,
     )
 
@@ -84,7 +103,7 @@ def list_devices(db: DbDep, admin: AdminDep) -> list[DeviceOut]:
 
 @router.post("/devices", response_model=EnrollmentCodeOut, status_code=status.HTTP_201_CREATED)
 def create_device(body: DeviceCreate, db: DbDep, settings: SettingsDep, admin: AdminDep) -> EnrollmentCodeOut:
-    device = Device(id=uuid.uuid4(), name=body.name, timezone=body.timezone)
+    device = Device(id=uuid.uuid4(), name=body.name, timezone=body.timezone, mode=body.mode)
     device.settings = DeviceSettings()
     db.add(device)
     out = _issue_enrollment_code(device, settings)
@@ -111,7 +130,7 @@ def update_device(device_id: uuid.UUID, body: DeviceUpdate, db: DbDep, admin: Ad
 
 
 @router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_device(device_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
+def delete_device(device_id: uuid.UUID, db: DbDep, admin: VerifiedAdminDep) -> None:
     device = _device(db, device_id)
     log_admin(db, admin, "device.deleted", f"Device '{device.name}' ({device.id}) deleted", None, {"device_id": str(device.id)})
     db.delete(device)
@@ -119,7 +138,7 @@ def delete_device(device_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
 
 
 @router.post("/devices/{device_id}/enrollment-code", response_model=EnrollmentCodeOut)
-def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsDep, admin: AdminDep) -> EnrollmentCodeOut:
+def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsDep, admin: VerifiedAdminDep) -> EnrollmentCodeOut:
     """Issue a fresh enrollment code and revoke the current device token (use to reinstall or rotate)."""
     device = _device(db, device_id, lock=True)
     device.token_hash = None
@@ -127,6 +146,44 @@ def reissue_enrollment_code(device_id: uuid.UUID, db: DbDep, settings: SettingsD
     log_admin(db, admin, "device.token_revoked", f"Device '{device.name}' token revoked; new enrollment code issued", device.id)
     db.commit()
     return out
+
+
+@router.post("/devices/{device_id}/installer", response_class=Response)
+def download_installer(
+    device_id: uuid.UUID, body: InstallerRequest, request: Request, db: DbDep, settings: SettingsDep, admin: VerifiedAdminDep
+) -> Response:
+    """One-click installer zip with a freshly issued enrollment code and this server's address baked in."""
+    device = _device(db, device_id, lock=True)
+    if device.token_hash is not None and not body.replace:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This PC is already installed. A new installer disconnects it until it's reinstalled; confirm to continue.",
+        )
+    api_url = (settings.public_url or str(request.base_url)).rstrip("/")
+    if body.mode is not None:
+        device.mode = body.mode
+    device.token_hash = None
+    code = _issue_enrollment_code(device, settings)
+    try:
+        data = build_installer_zip(
+            Path(settings.agent_dir), api_url, code.enrollment_code, code.expires_at, device.name, body.child_user, device.mode
+        )
+    except FileNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Installer files are not available on this server") from exc
+    log_admin(db, admin, "device.installer_downloaded", f"Installer downloaded for '{device.name}'", device.id,
+              {"child_user": body.child_user, "replaced_install": body.replace, "mode": device.mode})
+    db.commit()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="KidputerControl-Installer.zip"',
+            # The dashboard shows the new code too, for installing by hand.
+            "X-Enrollment-Code": code.enrollment_code,
+            "X-Enrollment-Expires": code.expires_at.isoformat(),
+        },
+    )
 
 
 # --- Schedule & settings -------------------------------------------------------------
@@ -172,7 +229,7 @@ def patch_settings(device_id: uuid.UUID, body: SettingsIn, db: DbDep, admin: Adm
 
 
 @router.put("/devices/{device_id}/pin", status_code=status.HTTP_204_NO_CONTENT)
-def set_pin(device_id: uuid.UUID, body: PinIn, db: DbDep, settings: SettingsDep, admin: AdminDep) -> None:
+def set_pin(device_id: uuid.UUID, body: PinIn, db: DbDep, settings: SettingsDep, admin: VerifiedAdminDep) -> None:
     device = _device(db, device_id, lock=True)
     s = device.settings
     s.pin_hash, s.pin_salt = hash_pin(body.pin, settings.pin_pbkdf2_iterations)
@@ -183,7 +240,7 @@ def set_pin(device_id: uuid.UUID, body: PinIn, db: DbDep, settings: SettingsDep,
 
 
 @router.delete("/devices/{device_id}/pin", status_code=status.HTTP_204_NO_CONTENT)
-def clear_pin(device_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
+def clear_pin(device_id: uuid.UUID, db: DbDep, admin: VerifiedAdminDep) -> None:
     device = _device(db, device_id, lock=True)
     s = device.settings
     s.pin_hash = s.pin_salt = s.pin_iterations = None
@@ -329,7 +386,7 @@ def list_events(
     until: datetime | None = None,
     before_id: Annotated[int | None, Query(description="Pagination cursor: return events with id < before_id")] = None,
     limit: int = Query(default=100, ge=1, le=1000),
-) -> list[ActivityEvent]:
+) -> list[EventOut]:
     q = select(ActivityEvent)
     if device_id is not None:
         q = q.where(ActivityEvent.device_id == device_id)
@@ -345,4 +402,12 @@ def list_events(
         q = q.where(ActivityEvent.occurred_at < until)
     if before_id is not None:
         q = q.where(ActivityEvent.id < before_id)
-    return list(db.scalars(q.order_by(ActivityEvent.id.desc()).limit(limit)))
+    events = list(db.scalars(q.order_by(ActivityEvent.id.desc()).limit(limit)))
+    actor_ids = {e.actor_user_id for e in events if e.actor_user_id}
+    names = {u.id: u.name for u in db.scalars(select(AdminUser).where(AdminUser.id.in_(actor_ids)))} if actor_ids else {}
+    out = []
+    for e in events:
+        item = EventOut.model_validate(e)
+        item.actor_name = names.get(e.actor_user_id) if e.actor_user_id else None
+        out.append(item)
+    return out

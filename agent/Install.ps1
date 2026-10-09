@@ -15,7 +15,15 @@
     5. Registers the SYSTEM watchdog scheduled task (\KidputerControl\Watchdog) and starts it.
 
 .EXAMPLE
+    # One-click installer from the dashboard: just double-click "Install Kidputer Control.cmd".
+    # It runs this script, which reads install-config.json from its own folder.
+
+.EXAMPLE
     .\Install.ps1 -ApiUrl https://monitor.example.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
+
+.EXAMPLE
+    # Trusted mode: the child's account is an administrator (they can install apps themselves).
+    .\Install.ps1 -ApiUrl https://monitor.example.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam -Mode trusted
 
 .EXAMPLE
     # Upgrade in place, keeping the existing enrollment:
@@ -29,8 +37,14 @@ param(
     [string]$ChildUser,
     # Allow plain http:// (local testing only).
     [switch]$AllowInsecureHttp,
-    # Install even if the child account is an administrator (enforcement could then be disabled by the child).
-    [switch]$Force
+    # 'managed' (default): the child must have a standard account. 'trusted': the child is an administrator;
+    # enforcement still works day to day, but the child could switch it off, so parents rely on notifications.
+    [ValidateSet('', 'managed', 'trusted')]
+    [string]$Mode = '',
+    # Same as -Mode trusted for an administrator child (kept for older instructions).
+    [switch]$Force,
+    # Settings written by the dashboard's one-click download. Explicit parameters take precedence.
+    [string]$ConfigFile = (Join-Path $PSScriptRoot 'install-config.json')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +64,52 @@ Import-Module (Join-Path $source 'Modules\KidputerControl.Common.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $dataRoot
 
 # --- Inputs ----------------------------------------------------------------------------------------------------
+$config = $null
+if ($ConfigFile -and (Test-Path -LiteralPath $ConfigFile)) {
+    try { $config = Read-KcJsonFile -Path $ConfigFile } catch { throw "Could not read $ConfigFile. Download a new installer from the dashboard." }
+}
+$resolved = Resolve-KcInstallSettings -Config $config -ApiUrl $ApiUrl -EnrollmentCode $EnrollmentCode -ChildUser $ChildUser -AllowInsecureHttp:$AllowInsecureHttp -Mode $Mode
+$ApiUrl = $resolved.ApiUrl
+$EnrollmentCode = $resolved.EnrollmentCode
+$ChildUser = $resolved.ChildUser
+$AllowInsecureHttp = [switch]$resolved.AllowInsecureHttp
+$Mode = $resolved.Mode
+if ($Force) { $Mode = 'trusted' }
+if ($resolved.ExpiresAt -and $resolved.ExpiresAt -le (Get-KcNow)) {
+    throw "This installer's enrollment code expired at $($resolved.ExpiresAt.ToLocalTime().ToString('g')). Download a new installer from the dashboard."
+}
+
+function Read-ChildAccount {
+    # Offer the PC's accounts by number, so nobody has to know the exact account name. Managed mode lists
+    # standard accounts only; Trusted mode lists administrators too.
+    $adminSids = @()
+    try { $adminSids = @(Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID } | ForEach-Object { $_.SID.Value }) } catch { }
+    $users = @(Get-LocalUser | ForEach-Object { [pscustomobject]@{ Name = $_.Name; FullName = $_.FullName; Enabled = $_.Enabled; SID = $_.SID.Value } })
+    $candidates = Select-KcChildCandidates -Users $users -AdminSids $adminSids -CurrentSid ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) -IncludeAdmins:($Mode -eq 'trusted')
+    if ($candidates.Count -eq 0) {
+        if ($Mode -eq 'trusted') { Write-Host 'No other accounts were found on this PC.' -ForegroundColor Yellow }
+        else { Write-Host 'No standard (non-administrator) accounts were found on this PC. If your child uses an administrator account, download a Trusted-mode installer instead.' -ForegroundColor Yellow }
+        return Read-Host "Type the child's Windows account name"
+    }
+    Write-Host ''
+    Write-Host "Which account does your child use?"
+    for ($i = 0; $i -lt $candidates.Count; $i++) {
+        $label = $candidates[$i].Name
+        if ($candidates[$i].FullName -and $candidates[$i].FullName -ne $label) { $label = "$label ($($candidates[$i].FullName))" }
+        Write-Host ("  {0}. {1}" -f ($i + 1), $label)
+    }
+    Write-Host '  0. Another account (type its name)'
+    while ($true) {
+        $choice = Read-Host 'Enter a number'
+        $n = 0
+        if ([int]::TryParse($choice, [ref]$n)) {
+            if ($n -eq 0) { return Read-Host "Type the child's Windows account name" }
+            if ($n -ge 1 -and $n -le $candidates.Count) { return $candidates[$n - 1].Name }
+        }
+        Write-Host "Please enter a number from 0 to $($candidates.Count)."
+    }
+}
+
 $existing = $null
 try { $existing = Read-KcJsonFile -Path $paths.AgentFile } catch { }
 $isUpgrade = ($null -ne $existing) -and [IO.File]::Exists($paths.TokenFile) -and -not $EnrollmentCode
@@ -57,9 +117,10 @@ $isUpgrade = ($null -ne $existing) -and [IO.File]::Exists($paths.TokenFile) -and
 if (-not $isUpgrade) {
     if (-not $ApiUrl) { $ApiUrl = Read-Host 'Cloud API URL (e.g. https://monitor.example.com)' }
     if (-not $EnrollmentCode) { $EnrollmentCode = Read-Host 'Enrollment code from the dashboard' }
-    if (-not $ChildUser) { $ChildUser = Read-Host "Child's Windows account name" }
+    if (-not $ChildUser) { $ChildUser = Read-ChildAccount }
 } else {
     if (-not $ApiUrl) { $ApiUrl = [string]$existing.api_url }
+    if (-not $PSBoundParameters.ContainsKey('Mode') -and -not $config -and -not $Force) { $Mode = [string](Get-KcProp $existing 'mode' 'managed') }
     Write-Host "Existing enrollment found (device $($existing.device_id)); upgrading in place."
 }
 $ApiUrl = $ApiUrl.TrimEnd('/')
@@ -83,8 +144,11 @@ if ($childSid -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
 }
 $childIsAdmin = $false
 try { $childIsAdmin = [bool](Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID -and $_.SID.Value -eq $childSid }) } catch { }
-if ($childIsAdmin -and -not $Force) {
-    throw "'$ChildUser' is an administrator and could simply remove the agent. Make it a standard user (recommended) or pass -Force."
+if ($childIsAdmin -and $Mode -ne 'trusted') {
+    throw "'$ChildUser' is an administrator and could simply remove the agent. Make it a standard user (recommended), or download a Trusted-mode installer from the dashboard (or pass -Mode trusted)."
+}
+if ($Mode -eq 'trusted') {
+    Write-Host 'Trusted mode: the schedule is enforced, but an administrator child could switch it off. You will be notified if the PC goes silent.' -ForegroundColor Yellow
 }
 
 # --- Stop any running instance -------------------------------------------------------------------------------------
@@ -132,7 +196,14 @@ Set-IcaclsAcl $paths.Inbox @("${SYSTEM}:(OI)(CI)F", "${ADMINS}:(OI)(CI)F", "${US
 # --- Enrollment -------------------------------------------------------------------------------------------------------
 if (-not $isUpgrade) {
     Write-Host "Enrolling with $ApiUrl"
-    $enrolled = Invoke-KcEnroll -BaseUrl $ApiUrl -EnrollmentCode $EnrollmentCode
+    try {
+        $enrolled = Invoke-KcEnroll -BaseUrl $ApiUrl -EnrollmentCode $EnrollmentCode
+    } catch {
+        if ($_.Exception.Message -match 'HTTP 401') {
+            throw 'The enrollment code was rejected: it has expired or was already used. Download a new installer (or code) from the dashboard.'
+        }
+        throw "Could not reach $ApiUrl to enroll this PC: $($_.Exception.Message)"
+    }
     Save-KcDeviceToken -Token ([string]$enrolled.device_token)
     $deviceId = [string]$enrolled.device_id
     # A fresh enrollment starts from clean state.
@@ -144,6 +215,7 @@ Write-KcJsonFile -Path $paths.AgentFile -Object ([ordered]@{
         api_url        = $ApiUrl
         device_id      = $deviceId
         child_user_sid = $childSid
+        mode           = $Mode
         agent_version  = (Get-KcAgentVersion)
         installed_at   = (ConvertTo-KcIso (Get-KcNow))
     })
@@ -178,4 +250,5 @@ Write-Host ''
 Write-Host 'Kidputer Control is installed and running.' -ForegroundColor Green
 Write-Host "  Device:   $deviceId"
 Write-Host "  Enforced: $ChildUser ($childSid)"
+Write-Host "  Mode:     $Mode"
 Write-Host '  Set the schedule and lock-screen PIN from the dashboard.'

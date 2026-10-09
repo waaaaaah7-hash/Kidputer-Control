@@ -10,7 +10,7 @@
 
 Set-StrictMode -Version 3.0
 
-$script:AgentVersion = '1.0.0'
+$script:AgentVersion = '1.1.0'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 $script:Paths = $null
 $script:Http = $null
@@ -126,6 +126,8 @@ function New-KcLocalState {
         dismissed_messages = @()   # closable message ids the child closed
         displayed_messages = @()   # message ids already reported as displayed
         lock_episode       = $null # {key, countdown_ends_at}: survives reboots so a restart can't reset the countdown
+        handled_commands   = @()   # dashboard command ids already carried out
+        command_results    = @()   # [{id, status, result}] waiting to be uploaded
     }
 }
 
@@ -139,7 +141,7 @@ function Read-KcLocalState {
             $v = Get-KcProp $raw $name
             if ($null -ne $v) { $state.$name = $v }
         }
-        foreach ($list in 'local_overrides', 'released_locks', 'dismissed_messages', 'displayed_messages') {
+        foreach ($list in 'local_overrides', 'released_locks', 'dismissed_messages', 'displayed_messages', 'handled_commands', 'command_results') {
             $state.$list = @($state.$list)
         }
     }
@@ -553,6 +555,25 @@ function Send-KcQueuedEvents {
     $sent
 }
 
+function Send-KcReport {
+    <# Upload a bulk report (running processes, drives, ...). Returns $true when the server took it. #>
+    param([Parameter(Mandatory)][string]$BaseUrl, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$Kind, [Parameter(Mandatory)]$Data)
+    try {
+        $r = Invoke-KcApi -BaseUrl $BaseUrl -Method POST -Path "/api/v1/agent/reports/$Kind" -Token $Token -Body $Data
+        $r.Status -eq 204
+    } catch { $false }
+}
+
+function Send-KcCommandResult {
+    <# Report a dashboard command's outcome. True when recorded (or the server no longer knows it). #>
+    param([Parameter(Mandatory)][string]$BaseUrl, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)]$Result)
+    $body = @{ status = [string]$Result.status; result = $Result.result }
+    try {
+        $r = Invoke-KcApi -BaseUrl $BaseUrl -Method POST -Path "/api/v1/agent/commands/$($Result.id)/result" -Token $Token -Body $body
+        ($r.Status -eq 204) -or ($r.Status -eq 404)
+    } catch { $false }
+}
+
 function Send-KcHeartbeat {
     param([Parameter(Mandatory)][string]$BaseUrl, [Parameter(Mandatory)][string]$Token, [hashtable]$Status)
     try {
@@ -627,6 +648,55 @@ function Get-KcInboxRequests {
         }
     }
     , @($out)
+}
+
+# --- Installer helpers ------------------------------------------------------------------------------------------
+
+function Resolve-KcInstallSettings {
+    <#
+        Merge install-config.json (written into the dashboard's one-click download) with explicit
+        Install.ps1 parameters. Explicit parameters win. Returns @{ApiUrl; EnrollmentCode; ChildUser;
+        AllowInsecureHttp; ExpiresAt; FromConfig; Mode}. Mode is 'managed' (the default) or 'trusted'.
+    #>
+    param($Config, [string]$ApiUrl, [string]$EnrollmentCode, [string]$ChildUser, [switch]$AllowInsecureHttp, [string]$Mode)
+    $r = @{
+        ApiUrl            = $ApiUrl
+        EnrollmentCode    = $EnrollmentCode
+        ChildUser         = $ChildUser
+        AllowInsecureHttp = [bool]$AllowInsecureHttp
+        ExpiresAt         = $null
+        FromConfig        = $false
+        Mode              = $Mode
+    }
+    if ($null -ne $Config) {
+        $r.FromConfig = $true
+        if (-not $r.ApiUrl) { $r.ApiUrl = [string](Get-KcProp $Config 'api_url' '') }
+        if (-not $r.EnrollmentCode) {
+            $r.EnrollmentCode = [string](Get-KcProp $Config 'enrollment_code' '')
+            $r.ExpiresAt = ConvertTo-KcDate (Get-KcProp $Config 'expires_at')
+        }
+        if (-not $r.ChildUser) { $r.ChildUser = [string](Get-KcProp $Config 'child_user' '') }
+        if (-not $r.AllowInsecureHttp) { $r.AllowInsecureHttp = [bool](Get-KcProp $Config 'allow_insecure_http' $false) }
+        if (-not $r.Mode) { $r.Mode = [string](Get-KcProp $Config 'mode' '') }
+    }
+    if (@('managed', 'trusted') -notcontains $r.Mode) { $r.Mode = 'managed' }
+    $r
+}
+
+function Select-KcChildCandidates {
+    <#
+        Windows accounts worth offering as "the child": enabled, not built-in (Administrator, Guest,
+        DefaultAccount, WDAGUtilityAccount), and not the parent running the installer. Administrators are
+        left out unless -IncludeAdmins (Trusted mode, where the child's account is an administrator).
+        $Users: objects with Name, FullName, Enabled and SID (as from Get-LocalUser).
+    #>
+    param([object[]]$Users, [string[]]$AdminSids = @(), [string]$CurrentSid, [switch]$IncludeAdmins)
+    $builtinRids = @('500', '501', '503', '504')
+    , @($Users | Where-Object {
+            $sid = [string]$_.SID
+            $_.Enabled -and $sid -and $sid -ne $CurrentSid -and ($IncludeAdmins -or ($AdminSids -notcontains $sid)) -and
+            ($builtinRids -notcontains ($sid -split '-')[-1])
+        } | Sort-Object Name)
 }
 
 Export-ModuleMember -Function *-Kc*

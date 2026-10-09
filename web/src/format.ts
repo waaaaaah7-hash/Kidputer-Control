@@ -151,6 +151,27 @@ const EVENT_LABELS: Record<string, string> = {
   "admin.totp_enabled": "Two-factor sign-in turned on",
   "admin.password_changed": "Password changed",
   "admin.bootstrapped": "First admin created",
+  "admin.passkey_added": "Passkey added",
+  "admin.passkey_removed": "Passkey removed",
+  "admin.device_remembered": "Device remembered",
+  "admin.device_forgotten": "Remembered device forgotten",
+  "admin.session_revoked": "Signed out a device",
+  "device.installer_downloaded": "Installer downloaded",
+  "agent.updated": "Kidputer Control updated",
+  "agent.update_failed": "Update failed",
+  "app.stop_requested": "Asked to close an app",
+  "app.stop_warning": "App closing warning shown",
+  "app.stopped": "App closed",
+  "device.silent": "PC went silent",
+  "device.offline": "PC turned off",
+  "device.back_online": "PC back online",
+  "device.agent_was_stopped": "Kidputer Control was stopped",
+  "pc.shutting_down": "PC shutting down",
+  "pc.resumed": "PC woke from sleep",
+  "admin.invite_created": "Parent invited",
+  "admin.invite_cancelled": "Parent invite cancelled",
+  "admin.invite_accepted": "Parent joined",
+  "admin.parent_removed": "Parent removed",
 };
 
 export function eventLabel(e: Pick<ActivityEvent, "event_type">): string {
@@ -166,3 +187,49 @@ export function timeZones(): string[] {
 export function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
+
+/** "Chrome on Windows", "Safari on iPhone", ... from a browser's user-agent string. */
+export function describeUserAgent(ua: string | null | undefined): string {
+  if (!ua) return "Unknown device";
+  const browser = /Edg(e|A|iOS)?\//.test(ua)
+    ? "Edge"
+    : /OPR\//.test(ua)
+      ? "Opera"
+      : /SamsungBrowser/.test(ua)
+        ? "Samsung Internet"
+        : /Firefox\/|FxiOS/.test(ua)
+          ? "Firefox"
+          : /Chrome\/|CriOS/.test(ua)
+            ? "Chrome"
+            : /Safari\//.test(ua)
+              ? "Safari"
+              : "Browser";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+      ? "iPad"
+      : /Android/.test(ua)
+        ? "Android"
+        : /Windows/.test(ua)
+          ? "Windows"
+          : /CrOS/.test(ua)
+            ? "Chromebook"
+            : /Mac OS X|Macintosh/.test(ua)
+              ? "Mac"
+              : /Linux/.test(ua)
+                ? "Linux"
+                : "";
+  return os ? `${browser} on ${os}` : browser;
+}
+
+const AUTH_METHODS: Record<string, string> = {
+  passkey: "Passkey",
+  password_totp: "Password + code",
+  password_remembered: "Password, remembered device",
+  password: "Password",
+};
+
+export function authMethodLabel(method: string | null | undefined): string {
+  return (method && AUTH_METHODS[method]) || "Signed in";
+}
+

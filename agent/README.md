@@ -16,23 +16,51 @@ minute). Every relaunch after the first is logged as `ui_agent.restarted`.
 Requirements:
 - Windows 10 or 11 with Windows PowerShell 5.1, which is built in.
 - An administrator account for the parent to install with.
-- A **standard** (non-administrator) account for the child.
+- An account for the child. Which kind decides the PC's **mode**, chosen in the download dialog:
+  - **Managed** (recommended): the child has a **standard** account and can't switch Kidputer
+    Control off.
+  - **Trusted**: the child's account is an **administrator**. The schedule still applies day to
+    day, but the child *could* switch it off, so the safety net is notifications (installs, and the
+    PC going silent).
 
-Steps:
-1. In the dashboard, click **Add a PC**. It shows the enrollment code (valid for 24 hours) and the
-   exact install command, including your dashboard's URL.
-2. Copy this `agent` folder to the child's PC.
-3. Open **PowerShell as administrator** on the child's PC and run:
-
-   ```powershell
-   Set-ExecutionPolicy -Scope Process Bypass
-   .\Install.ps1 -ApiUrl https://kidputer-control.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
-   ```
-
-   For a Microsoft account, use `-ChildUser MicrosoftAccount\sam@example.com`.
-
-4. Set the schedule and lock-screen PIN in the dashboard. The PC picks them up within one poll
+**One-click installer (recommended):**
+1. In the dashboard, click **Add a PC** (or open the device's page) and click **Download
+   installer**. You can type the child's Windows account name first, or leave it blank and pick it
+   during install.
+2. Copy the zip to the child's PC and unzip it.
+3. Signed in as a parent (administrator), double-click **Install Kidputer Control**. Click **Yes**
+   when Windows asks for permission.
+   - If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
+4. Pick the child's account from the numbered list. In Managed mode the list shows only the PC's
+   standard (non-administrator) accounts; in Trusted mode it includes administrators.
+5. Set the schedule and lock-screen PIN in the dashboard. The PC picks them up within one poll
    interval, 30 seconds by default.
+
+What's in the download:
+- `Install.ps1`, `Uninstall.ps1`, and the `KidputerControl` folder, the same files as in this
+  repository.
+- `install-config.json`: the server address and a one-time enrollment code, valid for 24 hours.
+- `Install Kidputer Control.cmd`: asks Windows for administrator permission, then runs
+  `Install.ps1`.
+
+Each download issues a new code and cancels any earlier one. The code isn't copied onto the PC's
+installed files.
+
+**By hand:** if you'd rather not use the download, click **Install by hand instead** under the
+download button to get an enrollment code. Then, in an administrator PowerShell in this `agent`
+folder, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\Install.ps1 -ApiUrl https://kidputer-control.onrender.com -EnrollmentCode ABCD-EFGH-JKMN -ChildUser Sam
+```
+
+Leave out `-ChildUser` to pick the account from a list. For a Microsoft account, use
+`-ChildUser MicrosoftAccount\sam@example.com`. Add `-Mode trusted` if the child's account is an
+administrator (Managed mode refuses an administrator account).
+
+To switch mode later, change the account type in Windows Settings and flip the mode on the
+device's page in the dashboard. No reinstall is needed.
 
 To upgrade, run `.\Install.ps1` again with no arguments. It keeps the existing enrollment. To move
 the PC to a new device record, pass a new `-EnrollmentCode`.
@@ -108,12 +136,31 @@ a short schedule window, or an immediate lock, set from the dashboard.
 10. **Tamper:** as an administrator, edit a file under `%ProgramFiles%\KidputerControl`. Within a
     minute a critical `tamper.detected` event appears. Re-run `Install.ps1` to restore the files.
 11. **Parent account:** sign in as the parent. No countdown or lock screen appears.
+12. **Shutdown and silence:** shut the PC down normally. The dashboard log shows "PC shutting
+    down", and 15 minutes later "PC turned off" rather than a "PC went silent" alert. Turn it back
+    on: "PC back online" appears. (If "PC went silent" appears instead, the shutdown signal didn't
+    reach the server in time; that's a false alarm, not a fault.)
+13. **Sleep:** put the PC to sleep for a few minutes and wake it. The log shows "PC woke from
+    sleep".
+14. **Running apps:** with the child signed in and an app open (Notepad doesn't count: Windows'
+    own programs are hidden), open the device's **Apps** tab. The app appears within a few
+    seconds, with its name and memory use.
+15. **Closing an app:** click **Close**, then **Warn, then close in 1 minute**. The child sees
+    "<app> closes in 1:00" bottom-right. When it reaches zero the app is asked to close (it can
+    still offer to save) and is force-closed 5 seconds later if it's still open. The dashboard
+    shows "Closed". Try **Close right away** too.
+16. **Auto-update:** after deploying a server with changed agent files, the PC updates at its
+    next check-in (a failed attempt is retried after an hour). The log shows "Kidputer Control updated from ... to ...",
+    the device page shows the new agent version, and no tamper alert follows. Turning
+    auto-update off on the device page stops this.
 
 ## Tests
 
 ```powershell
 .\tests\Parse.Tests.ps1     # every script parses; the Win32 interop compiles
-.\tests\Common.Tests.ps1    # decision logic, countdown, PIN and lockout, queue, inbox, tamper
+.\tests\Common.Tests.ps1    # decision logic, countdown, PIN and lockout, queue, inbox, tamper, install modes
+.\tests\Apps.Tests.ps1      # running apps: which processes may be closed, the process report
+.\tests\Update.Tests.ps1    # auto-update: fingerprints, install, rollback
 ```
 
 Both run on Windows PowerShell 5.1 and on PowerShell 7 (Windows CI runs both).

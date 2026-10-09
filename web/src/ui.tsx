@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "./api";
+import { UserCancelled } from "./cancel";
+import { useReauth } from "./reauthContext";
 import type { Tone } from "./format";
 
 // --- Data loading ---------------------------------------------------------------------------------
@@ -104,6 +106,7 @@ export function ActionButton(props: {
   const { onClick, children, variant = "secondary", success, confirm, disabled, type = "button" } = props;
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const reauth = useReauth();
   return (
     <button
       type={type}
@@ -114,10 +117,10 @@ export function ActionButton(props: {
         if (confirm && !window.confirm(confirm)) return;
         setBusy(true);
         try {
-          await onClick();
+          await reauth(onClick);
           if (success) toast(success);
         } catch (e) {
-          toast(errorMessage(e), "danger");
+          if (!(e instanceof UserCancelled)) toast(errorMessage(e), "danger");
         } finally {
           setBusy(false);
         }

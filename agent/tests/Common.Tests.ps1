@@ -234,5 +234,67 @@ Test 'device token round-trips through protected storage' {
     Assert-True ([IO.File]::ReadAllText($paths.TokenFile) -notmatch 'secret-token') 'not stored in clear text'
 }
 
+# --- Installer helpers --------------------------------------------------------------------------------------
+
+Test 'installer settings come from install-config.json, explicit parameters win' {
+    $cfg = '{"api_url":"https://kc.example.com","enrollment_code":"ABCD-EFGH-JKMN","expires_at":"2026-01-13T21:00:00+00:00","child_user":"Sam"}' | ConvertFrom-Json
+    $r = Resolve-KcInstallSettings -Config $cfg
+    Assert-Equal 'https://kc.example.com' $r.ApiUrl
+    Assert-Equal 'ABCD-EFGH-JKMN' $r.EnrollmentCode
+    Assert-Equal 'Sam' $r.ChildUser
+    Assert-Equal (D '2026-01-13T21:00:00Z') $r.ExpiresAt
+    Assert-Equal $false $r.AllowInsecureHttp
+    Assert-Equal $true $r.FromConfig
+    $o = Resolve-KcInstallSettings -Config $cfg -ChildUser 'Maya' -EnrollmentCode 'ZZZZ-ZZZZ-ZZZZ'
+    Assert-Equal 'Maya' $o.ChildUser
+    Assert-Equal 'ZZZZ-ZZZZ-ZZZZ' $o.EnrollmentCode
+    Assert-Equal $null $o.ExpiresAt   # the config's expiry belongs to the config's code
+}
+
+Test 'installer settings without a config file pass parameters through' {
+    $r = Resolve-KcInstallSettings -Config $null -ApiUrl 'http://localhost:8000' -AllowInsecureHttp
+    Assert-Equal 'http://localhost:8000' $r.ApiUrl
+    Assert-Equal $true $r.AllowInsecureHttp
+    Assert-Equal $false $r.FromConfig
+    $local = '{"api_url":"http://localhost:8000","enrollment_code":"X","allow_insecure_http":true}' | ConvertFrom-Json
+    Assert-Equal $true (Resolve-KcInstallSettings -Config $local).AllowInsecureHttp
+}
+
+Test 'child account picker offers only enabled, standard, non-built-in accounts' {
+    $base = 'S-1-5-21-1-2-3'
+    $users = @(
+        [pscustomobject]@{ Name = 'Administrator'; FullName = ''; Enabled = $false; SID = "$base-500" },
+        [pscustomobject]@{ Name = 'Guest'; FullName = ''; Enabled = $true; SID = "$base-501" },
+        [pscustomobject]@{ Name = 'WDAGUtilityAccount'; FullName = ''; Enabled = $true; SID = "$base-504" },
+        [pscustomobject]@{ Name = 'Parent'; FullName = 'Mum'; Enabled = $true; SID = "$base-1001" },
+        [pscustomobject]@{ Name = 'Sam'; FullName = 'Sam'; Enabled = $true; SID = "$base-1002" },
+        [pscustomobject]@{ Name = 'OtherAdmin'; FullName = ''; Enabled = $true; SID = "$base-1003" },
+        [pscustomobject]@{ Name = 'Old'; FullName = ''; Enabled = $false; SID = "$base-1004" },
+        [pscustomobject]@{ Name = 'Maya'; FullName = 'Maya'; Enabled = $true; SID = "$base-1005" }
+    )
+    $c = Select-KcChildCandidates -Users $users -AdminSids @("$base-1003") -CurrentSid "$base-1001"
+    Assert-Equal @('Maya', 'Sam') @($c | ForEach-Object { $_.Name })
+    Assert-Equal 0 (Select-KcChildCandidates -Users @() -CurrentSid 'x').Count
+}
+
+Test 'Trusted mode also offers administrator accounts, never the parent running the installer' {
+    $base = 'S-1-5-21-1-2-3'
+    $users = @(
+        [pscustomobject]@{ Name = 'Parent'; FullName = ''; Enabled = $true; SID = "$base-1001" },
+        [pscustomobject]@{ Name = 'Sam'; FullName = ''; Enabled = $true; SID = "$base-1002" }
+    )
+    $c = Select-KcChildCandidates -Users $users -AdminSids @("$base-1001", "$base-1002") -CurrentSid "$base-1001" -IncludeAdmins
+    Assert-Equal @('Sam') @($c | ForEach-Object { $_.Name })
+}
+
+Test 'install mode comes from the config, defaults to managed, and rejects unknown values' {
+    Assert-Equal 'managed' (Resolve-KcInstallSettings -Config $null).Mode
+    $cfg = '{"api_url":"https://kc.example.com","mode":"trusted"}' | ConvertFrom-Json
+    Assert-Equal 'trusted' (Resolve-KcInstallSettings -Config $cfg).Mode
+    Assert-Equal 'managed' (Resolve-KcInstallSettings -Config $cfg -Mode 'managed').Mode
+    $bad = '{"mode":"anything"}' | ConvertFrom-Json
+    Assert-Equal 'managed' (Resolve-KcInstallSettings -Config $bad).Mode
+}
+
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 Complete-Tests

@@ -19,7 +19,7 @@ export default function EventList({ events, devices, showDevice = false }: { eve
           </div>
           <div className="event-meta muted small">
             {showDevice && e.device_id && <span>{names.get(e.device_id) ?? "Deleted device"} · </span>}
-            <span>{SOURCE_LABEL[e.source]} · </span>
+            <span>{e.actor_name ?? SOURCE_LABEL[e.source]} · </span>
             <time dateTime={e.occurred_at} title={formatDateTime(e.occurred_at)}>
               {relativeTime(e.occurred_at)}
             </time>
