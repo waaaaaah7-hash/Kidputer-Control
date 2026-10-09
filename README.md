@@ -74,6 +74,8 @@ or send an on-screen message. Everything that happens is recorded in one central
 | `docs/DEPLOY-RENDER.md` | Step-by-step deployment and first sign-in |
 | `docs/ARCHITECTURE.md` | Design decisions, data model, agent protocol |
 | `agent/README.md` | Installing on the child's PC, plus a first-run checklist |
+| `CLAUDE.md` | Working notes for Claude Code sessions: conventions, commands, traps, status |
+| `tools/render_readme_pdf.py` | Regenerates `README.pdf` from `README.md` |
 
 ## Getting started
 
