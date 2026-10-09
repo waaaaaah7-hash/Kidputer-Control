@@ -198,6 +198,7 @@ class FakePushService:
         class R:
             status_code = status
             reason = "Gone" if status == 410 else "OK"
+            headers: dict = {}
             text = ""
             content = b""
 
