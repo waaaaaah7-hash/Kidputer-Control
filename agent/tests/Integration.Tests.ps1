@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 Import-Module (Join-Path $PSScriptRoot '..\KidputerControl\Modules\KidputerControl.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot '..\KidputerControl\Modules\KidputerControl.Apps.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '..\KidputerControl\Modules\KidputerControl.Update.psm1') -Force
 
 $api = $env:KC_IT_API_URL
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("kc-it-" + [guid]::NewGuid().ToString('N'))
@@ -80,6 +81,24 @@ Test 'a dashboard command arrives, and its result and a process report go back' 
     # A result for a command the server no longer knows counts as delivered, so it isn't retried forever.
     $gone = [pscustomobject]@{ id = [guid]::NewGuid().ToString(); status = 'done'; result = $null }
     Assert-Equal $true (Send-KcCommandResult -BaseUrl $api -Token $script:token -Result $gone)
+}
+
+Test 'auto-update downloads the server''s agent, verifies it, and installs it' {
+    $want = $script:state.agent_update
+    Assert-True ([string]$want.bundle).Length 'state names a bundle'
+    $staged = Receive-KcAgentUpdate -BaseUrl $api -Token $script:token -Expected $want.bundle -StagingRoot (Join-Path $tmp 'update')
+    # Same files as this repository's agent folder.
+    $repo = (Get-KcLocalBundle -Root (Join-Path $PSScriptRoot '..\KidputerControl')).Fingerprint
+    Assert-Equal $repo $want.bundle
+    $install = Join-Path $tmp 'installed'
+    New-Item -ItemType Directory -Path $install | Out-Null
+    [IO.File]::WriteAllText((Join-Path $install 'Stale.ps1'), 'from an older version')
+    Install-KcAgentUpdate -StagingDir $staged -InstallRoot $install -BackupDir (Join-Path $tmp 'previous')
+    Assert-Equal $want.bundle (Get-KcLocalBundle -Root $install).Fingerprint
+    # A wrong expected fingerprint is refused before anything is downloaded.
+    $threw = $false
+    try { [void](Receive-KcAgentUpdate -BaseUrl $api -Token $script:token -Expected ('0' * 64) -StagingRoot (Join-Path $tmp 'update')) } catch { $threw = $true }
+    Assert-True $threw 'mismatched bundle refused'
 }
 
 Test 'offline API is reported, not thrown' {

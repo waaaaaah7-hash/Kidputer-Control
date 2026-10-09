@@ -176,6 +176,8 @@ export interface Device {
   last_status: AgentStatus | null;
   created_at: string;
   mode: DeviceMode;
+  /** The agent version the server ships, when the PC still runs another one. */
+  agent_update_available: string | null;
 }
 
 export interface EnrollmentCode {
@@ -200,6 +202,7 @@ export interface DeviceSettings {
   pin_override_minutes: number;
   silent_alert_minutes: number;
   show_window_titles: boolean;
+  auto_update: boolean;
   updated_at: string;
 }
 

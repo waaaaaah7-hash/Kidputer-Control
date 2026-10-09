@@ -157,6 +157,8 @@ const EVENT_LABELS: Record<string, string> = {
   "admin.device_forgotten": "Remembered device forgotten",
   "admin.session_revoked": "Signed out a device",
   "device.installer_downloaded": "Installer downloaded",
+  "agent.updated": "Kidputer Control updated",
+  "agent.update_failed": "Update failed",
   "app.stop_requested": "Asked to close an app",
   "app.stop_warning": "App closing warning shown",
   "app.stopped": "App closed",

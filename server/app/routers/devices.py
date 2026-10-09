@@ -9,7 +9,9 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from ..agent_bundle import load_bundle
 from ..audit import log_admin
+from ..config import get_settings
 from ..installer import build_installer_zip
 from ..deps import AdminDep, DbDep, SettingsDep, VerifiedAdminDep, utcnow
 from ..models import ActivityEvent, AdminUser, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
@@ -56,7 +58,16 @@ def _device_out(d: Device) -> DeviceOut:
         last_status=d.last_status,
         created_at=d.created_at,
         mode=d.mode,
+        agent_update_available=_update_available(d),
     )
+
+
+def _update_available(d: Device) -> str | None:
+    bundle = load_bundle(get_settings().agent_dir)
+    running = (d.last_status or {}).get("agent_bundle")
+    if bundle is None or not running or running == bundle.fingerprint:
+        return None
+    return bundle.version
 
 
 def _settings_out(s: DeviceSettings) -> SettingsOut:
@@ -70,6 +81,7 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         pin_override_minutes=s.pin_override_minutes,
         silent_alert_minutes=s.silent_alert_minutes,
         show_window_titles=s.show_window_titles,
+        auto_update=s.auto_update,
         updated_at=s.updated_at,
     )
 

@@ -10,7 +10,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .agent_bundle import load_bundle
 from .commands import pending_commands, snapshot_live_until
+from .config import get_settings
 from .models import Device, LockRequest, Message, Override, ScheduleEntry
 
 # How far ahead lock windows are precomputed. The agent falls back to evaluating the weekly schedule
@@ -91,7 +93,14 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
         "show_window_titles": s.show_window_titles,
         "live_until": snapshot_live_until(device, now),
         "commands": [{"id": str(c.id), "kind": c.kind, "payload": c.payload} for c in pending_commands(db, device, now)],
+        "agent_update": _agent_update(s.auto_update),
     }
+
+
+def _agent_update(enabled: bool) -> dict[str, str] | None:
+    """The agent version this PC should be running, if it updates automatically."""
+    bundle = load_bundle(get_settings().agent_dir) if enabled else None
+    return {"version": bundle.version, "bundle": bundle.fingerprint} if bundle else None
 
 
 def state_etag(state: dict[str, Any]) -> str:

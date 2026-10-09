@@ -219,6 +219,8 @@ class DeviceSettings(Base):
     silent_alert_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("15"))
     # Window titles can reveal browser tabs or document names, so the PC only reports them if asked.
     show_window_titles: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Install new agent versions automatically when the server has them.
+    auto_update: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     device: Mapped[Device] = relationship(back_populates="settings")

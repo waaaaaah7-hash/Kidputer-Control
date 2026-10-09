@@ -15,9 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from ..agent_bundle import load_bundle
 from ..audit import log_admin, log_system
-from ..deps import DbDep, DeviceDep, utcnow
 from ..commands import save_report
+from ..deps import DbDep, DeviceDep, SettingsDep, utcnow
 from ..models import ActivityEvent, Device, DeviceCommand, LockRequest, Message, Override
 from ..notify import queue_for_event
 from ..schemas import AgentEventIn, AgentEventsIn, AgentEventsOut, CommandResultIn, EnrollRequest, EnrollResponse, HeartbeatIn
@@ -204,6 +205,33 @@ def heartbeat(body: HeartbeatIn, request: Request, db: DbDep, device: DeviceDep)
     _touch(db, device, request)
     db.commit()
 
+
+
+# --- Agent auto-update -----------------------------------------------------------------------------------
+
+
+@router.get("/update/manifest")
+def update_manifest(request: Request, db: DbDep, device: DeviceDep, settings: SettingsDep) -> dict[str, Any]:
+    bundle = load_bundle(settings.agent_dir)
+    if bundle is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no agent files on this server")
+    _touch(db, device, request)
+    db.commit()
+    return {
+        "version": bundle.version,
+        "bundle": bundle.fingerprint,
+        "files": [{"path": f.path, "sha256": f.sha256, "size": f.size} for f in bundle.files],
+    }
+
+
+@router.get("/update/file")
+def update_file(path: str, device: DeviceDep, settings: SettingsDep) -> Response:
+    """One agent file. Only files listed in the manifest can be fetched."""
+    bundle = load_bundle(settings.agent_dir)
+    f = bundle.file(path) if bundle else None
+    if f is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not an agent file")
+    return Response(content=f.source.read_bytes(), media_type="application/octet-stream")
 
 
 # What the PC may upload in bulk, and how big each may be. Later features add their kinds here.

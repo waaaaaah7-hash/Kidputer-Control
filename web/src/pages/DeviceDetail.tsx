@@ -121,7 +121,7 @@ function StatusHeader({ device }: { device: Device }) {
         </h1>
         <p className="muted small">
           {device.enrolled
-            ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
+            ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"}${device.agent_update_available ? ` (updating to ${device.agent_update_available})` : ""} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
             : "Not installed yet"}
         </p>
       </div>
@@ -398,6 +398,10 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
         <label className="inline switch">
           <input type="checkbox" checked={form.enforcement_enabled} onChange={(e) => setForm({ ...form, enforcement_enabled: e.target.checked })} />
           Enforce the schedule on this PC
+        </label>
+        <label className="inline switch">
+          <input type="checkbox" checked={form.auto_update} onChange={(e) => setForm({ ...form, auto_update: e.target.checked })} />
+          Update Kidputer Control on this PC automatically
         </label>
         <div className="fields">
           <label>

@@ -23,6 +23,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Common.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Apps.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Update.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $DataRoot
 
 # --- Single instance ------------------------------------------------------------------------------------
@@ -60,6 +61,8 @@ $tamper = @{ NextAt = [DateTimeOffset]::MinValue; Problems = @() }
 $adminCheck = @{ NextAt = [DateTimeOffset]::MinValue; IsAdmin = $false }
 $power = @{ LastTick = $null; ShutdownReported = $false }
 $reports = @{ ProcessesAt = [DateTimeOffset]::MinValue }
+$update = @{ LastAttempt = [DateTimeOffset]::MinValue; Bundle = $null }
+try { $update.Bundle = (Get-KcLocalBundle -Root $InstallRoot).Fingerprint } catch { Write-KcLog -Level warning -Message "Can't fingerprint the installed files: $($_.Exception.Message)" }
 $appStops = New-Object System.Collections.ArrayList   # apps being closed: warning shown, then closed
 $script:childSession = $null
 $lastMode = $null
@@ -246,6 +249,7 @@ function Invoke-SyncStep {
             $sync.Failures = 0
             $sync.LastOkAt = $now
             if ($r.Changed) { $script:state = $r.State; Write-KcLog -Message 'New configuration received' }
+            if ($script:state) { Invoke-AgentUpdate }
             if ($r.ServerTime) {
                 $sync.SkewSeconds = [int]($now - $r.ServerTime).TotalSeconds
                 if ([Math]::Abs($sync.SkewSeconds) -gt 300 -and ($now - $sync.SkewReportedAt).TotalHours -ge 6) {
@@ -300,6 +304,7 @@ function Get-Status {
         clock_skew_seconds    = $sync.SkewSeconds
         pin_locked_until      = $local.pin_locked_until
         child_is_admin        = $adminCheck.IsAdmin
+        agent_bundle          = $update.Bundle
     }
     if ($d -and $d.UnlockAt) { $s.unlock_at = ConvertTo-KcIso $d.UnlockAt }
     if ($d -and $d.OverrideEndsAt) { $s.override_ends_at = ConvertTo-KcIso $d.OverrideEndsAt }
@@ -377,6 +382,43 @@ function Invoke-Commands {
             default { Complete-Command -Id $id -Status 'failed' -Result @{ reason = 'unsupported'; message = 'This PC needs a newer version of Kidputer Control for that.' } }
         }
     }
+}
+
+# --- Auto-update --------------------------------------------------------------------------------------------------
+
+function Invoke-AgentUpdate {
+    <#
+        The server ships a different agent bundle: download it, verify every file, swap it in, record the
+        new tamper manifest, and restart. At most one attempt an hour; a failed attempt changes nothing.
+    #>
+    $want = Get-KcProp $state 'agent_update'
+    $bundle = [string](Get-KcProp $want 'bundle' '')
+    if (-not $bundle -or -not $update.Bundle -or $bundle -eq $update.Bundle) { return }
+    $now = Get-KcNow
+    if (($now - $update.LastAttempt).TotalHours -lt 1) { return }
+    $update.LastAttempt = $now
+    $from = Get-KcAgentVersion
+    $to = [string](Get-KcProp $want 'version' '?')
+    $stagingRoot = Join-Path $paths.Config 'update'
+    try {
+        Write-KcLog -Message "Updating agent $from -> $to ($bundle)"
+        $staged = Receive-KcAgentUpdate -BaseUrl $apiUrl -Token $token -Expected $bundle -StagingRoot $stagingRoot
+        Install-KcAgentUpdate -StagingDir $staged -InstallRoot $InstallRoot -BackupDir (Join-Path $stagingRoot 'previous')
+        Write-KcJsonFile -Path $paths.Manifest -Object ([ordered]@{ created_at = (ConvertTo-KcIso (Get-KcNow)); files = (Get-KcFileHashes -InstallRoot $InstallRoot) })
+        Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+    } catch {
+        Add-KcEvent -Type 'agent.update_failed' -Severity warning -Message "Update to $to failed: $($_.Exception.Message)" -Data @{ version = $to }
+        return
+    }
+    Add-KcEvent -Type 'agent.updated' -Message "Kidputer Control updated from $from to $to" -Data @{ from = $from; to = $to; bundle = $bundle }
+    [void](Send-KcQueuedEvents -BaseUrl $apiUrl -Token $token -MaxBatches 1)
+    # Start again on the new files: the scheduled task's every-minute trigger would too; this is faster.
+    try {
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') -WindowStyle Hidden `
+            -ArgumentList '/c timeout /t 3 /nobreak >nul & schtasks /run /tn "\KidputerControl\Watchdog"'
+    } catch { }
+    Stop-StrayUiAgents
+    exit 0
 }
 
 # --- Tamper -------------------------------------------------------------------------------------------------------

@@ -203,6 +203,8 @@ class DeviceOut(BaseModel):
     last_status: dict[str, Any] | None
     created_at: datetime
     mode: DeviceMode
+    # The agent version this server ships, when the PC runs a different one (None = up to date or unknown).
+    agent_update_available: str | None = None
 
 
 class EnrollmentCodeOut(BaseModel):
@@ -253,6 +255,7 @@ class SettingsIn(BaseModel):
     pin_override_minutes: int | None = Field(default=None, ge=1, le=1440)
     silent_alert_minutes: int | None = Field(default=None, ge=0, le=1440)
     show_window_titles: bool | None = None
+    auto_update: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -267,6 +270,7 @@ class SettingsOut(BaseModel):
     pin_override_minutes: int
     silent_alert_minutes: int
     show_window_titles: bool
+    auto_update: bool
     updated_at: datetime
 
 
