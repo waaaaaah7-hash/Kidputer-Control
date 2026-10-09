@@ -4,7 +4,35 @@
 export interface Admin {
   id: string;
   email: string;
+  /** What the parent chose to be called; `name` falls back to the start of the email. */
+  display_name: string | null;
+  name: string;
   totp_enabled: boolean;
+}
+
+export interface Parent {
+  id: string;
+  email: string;
+  name: string;
+  totp_enabled: boolean;
+  passkeys: number;
+  created_at: string;
+  last_active_at: string | null;
+  you: boolean;
+}
+
+export interface Invite {
+  id: string;
+  email: string;
+  invited_by: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface InviteInfo {
+  email: string;
+  invited_by: string | null;
+  expires_at: string;
 }
 
 export interface LoginResult {
@@ -140,6 +168,8 @@ export interface ActivityEvent {
   occurred_at: string;
   received_at: string;
   actor_user_id: string | null;
+  /** The parent who did it, for parent actions. */
+  actor_name: string | null;
 }
 
 export interface EventQuery {
@@ -265,6 +295,7 @@ export const api = {
   reverify: (code: string) => request<void>("POST", "/auth/reverify", { code }),
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<Admin>("GET", "/auth/me"),
+  updateMe: (display_name: string) => request<Admin>("PATCH", "/auth/me", { display_name }),
   totpSetup: () => request<{ secret: string; otpauth_uri: string }>("POST", "/auth/totp/setup"),
   totpEnable: (code: string) => request<Admin>("POST", "/auth/totp/enable", { code }),
   changePassword: (current_password: string, new_password: string) =>
@@ -292,6 +323,15 @@ export const api = {
   removePasskey: (id: string) => request<void>("DELETE", `/auth/passkeys/${encodeURIComponent(id)}`),
 
   // Devices
+  parents: () => request<Parent[]>("GET", "/parents"),
+  invites: () => request<Invite[]>("GET", "/parents/invites"),
+  createInvite: (email: string) => request<{ invite: Invite; link: string }>("POST", "/parents/invites", { email }),
+  cancelInvite: (id: string) => request<void>("DELETE", `/parents/invites/${encodeURIComponent(id)}`),
+  removeParent: (id: string) => request<void>("DELETE", `/parents/${encodeURIComponent(id)}`),
+  lookupInvite: (token: string) => request<InviteInfo>("POST", "/invites/lookup", { token }),
+  acceptInvite: (token: string, display_name: string, password: string) =>
+    request<Admin>("POST", "/invites/accept", { token, display_name, password }),
+
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),
   createDevice: (name: string, timezone: string) => request<EnrollmentCode>("POST", "/devices", { name, timezone }),

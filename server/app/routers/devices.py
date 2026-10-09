@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..audit import log_admin
 from ..installer import build_installer_zip
 from ..deps import AdminDep, DbDep, SettingsDep, VerifiedAdminDep, utcnow
-from ..models import ActivityEvent, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
+from ..models import ActivityEvent, AdminUser, Device, DeviceSettings, LockRequest, Message, Override, ScheduleEntry
 from ..schemas import (
     DeviceCreate,
     DeviceOut,
@@ -369,7 +369,7 @@ def list_events(
     until: datetime | None = None,
     before_id: Annotated[int | None, Query(description="Pagination cursor: return events with id < before_id")] = None,
     limit: int = Query(default=100, ge=1, le=1000),
-) -> list[ActivityEvent]:
+) -> list[EventOut]:
     q = select(ActivityEvent)
     if device_id is not None:
         q = q.where(ActivityEvent.device_id == device_id)
@@ -385,4 +385,12 @@ def list_events(
         q = q.where(ActivityEvent.occurred_at < until)
     if before_id is not None:
         q = q.where(ActivityEvent.id < before_id)
-    return list(db.scalars(q.order_by(ActivityEvent.id.desc()).limit(limit)))
+    events = list(db.scalars(q.order_by(ActivityEvent.id.desc()).limit(limit)))
+    actor_ids = {e.actor_user_id for e in events if e.actor_user_id}
+    names = {u.id: u.name for u in db.scalars(select(AdminUser).where(AdminUser.id.in_(actor_ids)))} if actor_ids else {}
+    out = []
+    for e in events:
+        item = EventOut.model_validate(e)
+        item.actor_name = names.get(e.actor_user_id) if e.actor_user_id else None
+        out.append(item)
+    return out

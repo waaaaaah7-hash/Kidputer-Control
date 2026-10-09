@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # second-factor check (TOTP code or passkey) within this many minutes.
     reverify_minutes: int = 10
 
+    # How long a link inviting another parent stays valid.
+    invite_ttl_hours: int = 48
+
     # Passkeys (WebAuthn). The relying-party ID is the host the dashboard is opened on.
     webauthn_rp_name: str = "Kidputer Control"
     cookie_secure: bool = True  # set False only for local http dev

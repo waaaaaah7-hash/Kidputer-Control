@@ -277,6 +277,7 @@ def test_passkeys_and_remembered_device(page, live_app):
 
     # Remembered browser: the password alone is enough...
     page.get_by_role("button", name="Sign out").first.click()
+    expect(page).to_have_url(re.compile(r"/login$"))
     page.get_by_label("Email").fill("parent@example.com")
     page.get_by_label("Password").fill(PASSWORD)
     page.get_by_role("button", name="Continue").click()
@@ -300,8 +301,79 @@ def test_passkeys_and_remembered_device(page, live_app):
     page.get_by_test_id("remembered-list").get_by_role("button", name="Forget").click()
     expect(page.get_by_text("No remembered devices.")).to_be_visible()
     page.get_by_role("button", name="Sign out").first.click()
+    expect(page).to_have_url(re.compile(r"/login$"))
     page.get_by_label("Email").fill("parent@example.com")
     page.get_by_label("Password").fill(PASSWORD)
     page.get_by_role("button", name="Continue").click()
     expect(page.get_by_label("Authentication code")).to_be_visible()
 
+
+
+def test_second_parent_invite_and_removal(page, live_app):
+    _, secret = make_admin()
+    page.on("dialog", lambda d: d.accept())
+
+    page.goto("/login")
+    page.get_by_label("Email").fill("parent@example.com")
+    page.get_by_label("Password").fill(PASSWORD)
+    page.get_by_role("button", name="Continue").click()
+    page.get_by_label("Authentication code").fill(pyotp.TOTP(secret).now())
+    page.get_by_role("button", name="Verify").click()
+    expect(page.get_by_role("heading", name="Devices")).to_be_visible()
+
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Account").click()
+    page.get_by_label("Your name").fill("Alex")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator(".topbar-user")).to_contain_text("Alex")
+
+    page.get_by_label("Email of the parent to invite").fill("partner@example.com")
+    page.get_by_role("button", name="Invite a parent").click()
+    link = page.get_by_test_id("invite-link").locator("code").inner_text()
+    assert link.startswith(f"{live_app}/invite#")
+    expect(page.get_by_test_id("invite-list")).to_contain_text("partner@example.com")
+    shot(page, "20-parents-invite")
+
+    # The partner opens the link in their own browser.
+    partner_ctx = page.context.browser.new_context(base_url=live_app, viewport={"width": 390, "height": 844})
+    partner = partner_ctx.new_page()
+    partner.goto(link)
+    expect(partner.get_by_text("Alex invited")).to_be_visible()
+    assert_fits_screen(partner)
+    shot(partner, "21-invite-accept-phone")
+    partner.get_by_label("Your name").fill("Sam")
+    partner.get_by_label("Choose a password").fill("another long passphrase")
+    partner.get_by_label("Repeat password").fill("another long passphrase")
+    partner.get_by_role("button", name="Create my account").click()
+    expect(partner).to_have_url(re.compile(r"/setup-2fa$"))
+    partner_secret = partner.locator("code.secret").inner_text().replace(" ", "")
+    partner.get_by_label("Code from the app").fill(pyotp.TOTP(partner_secret).now())
+    partner.get_by_role("button", name="Turn on two-factor sign-in").click()
+    expect(partner.get_by_role("heading", name="Devices")).to_be_visible()
+
+    # The link only works once.
+    used = partner_ctx.new_page()
+    used.goto(link)
+    expect(used.get_by_text("expired or was already used")).to_be_visible()
+    used.close()
+
+    # Both parents are listed, and the activity log says who did what.
+    page.reload()
+    expect(page.get_by_test_id("parent-list")).to_contain_text("Sam")
+    expect(page.get_by_test_id("parent-list")).to_contain_text("partner@example.com")
+    expect(page.get_by_test_id("invite-list")).to_have_count(0)
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_fits_screen(page)
+    shot(page, "22-parents-phone")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Activity").click()
+    expect(page.locator(".event", has_text="Parent joined")).to_contain_text("Sam")
+    expect(page.locator(".event", has_text="Parent invited")).to_contain_text("Alex")
+
+    # Removing Sam signs them out.
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Account").click()
+    sam_row = page.get_by_test_id("parent-list").locator(".list-row", has_text="Sam")
+    sam_row.get_by_role("button", name="Remove").click()
+    expect(page.get_by_test_id("parent-list")).not_to_contain_text("Sam")
+    partner.reload()
+    expect(partner).to_have_url(re.compile(r"/login$"))
+    partner_ctx.close()

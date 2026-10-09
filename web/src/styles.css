@@ -115,6 +115,8 @@ code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; fon
 .grow { flex: 1; min-width: 0; }
 .list-row .row { flex-shrink: 0; }
 .add-passkey { margin-top: 0.75rem; }
+.invite-link { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; }
+.wrap-anywhere { overflow-wrap: anywhere; }
 
 /* Badges & tones */
 .badge { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }

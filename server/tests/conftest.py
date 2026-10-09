@@ -97,3 +97,11 @@ def agent(enrolled_device):
         c.headers["Authorization"] = f"Bearer {token}"
         c.device_id = device_id
         yield c
+
+
+@pytest.fixture
+def other_client():
+    """A second browser (another parent, or someone opening an invite link)."""
+    with TestClient(app) as c:
+        c.headers.update(CSRF)
+        yield c

@@ -56,8 +56,31 @@ class AdminUser(Base):
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
+    # Shown in the activity log ("Mum", "Dad"); falls back to the start of the email address.
+    display_name: Mapped[str | None] = mapped_column(String(60))
+    # A removed parent: kept (not deleted) so the activity log still says who did what.
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (Index("uq_admin_users_email_lower", func.lower(email), unique=True),)
+
+    @property
+    def name(self) -> str:
+        return self.display_name or self.email.split("@", 1)[0]
+
+
+class AdminInvite(Base):
+    """A one-time link that lets another parent create their own account."""
+
+    __tablename__ = "admin_invites"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AdminSession(Base):

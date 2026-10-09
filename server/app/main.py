@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from .bootstrap import bootstrap_admin
 from .config import get_settings
 from .deps import CSRF_HEADER
-from .routers import agent, auth, devices, passkeys
+from .routers import agent, auth, devices, parents, passkeys
 
 settings = get_settings()
 
@@ -57,6 +57,7 @@ async def security_headers(request: Request, call_next):
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(passkeys.router, prefix="/api/v1")
+app.include_router(parents.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")
 

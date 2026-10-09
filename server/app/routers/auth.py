@@ -24,6 +24,7 @@ from ..schemas import (
     LoginRequest,
     LoginResponse,
     MfaRequest,
+    ProfileUpdate,
     RememberedDeviceOut,
     SessionOut,
     TotpSetupResponse,
@@ -150,6 +151,8 @@ def _remember_device(db: Session, request: Request, response: Response, settings
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request, response: Response, db: DbDep, settings: SettingsDep) -> LoginResponse:
     user = db.scalar(select(AdminUser).where(func.lower(AdminUser.email) == body.email.lower()).with_for_update())
+    if user is not None and user.disabled_at is not None:
+        user = None  # removed parent: same response (and timing) as an unknown email
     if user is not None and is_locked(user):
         verify_password(None, body.password)  # keep timing uniform
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "account temporarily locked; try again later")
@@ -224,6 +227,13 @@ def logout(response: Response, db: DbDep, settings: SettingsDep, sess: Annotated
 
 @router.get("/me", response_model=AdminOut)
 def me(user: Annotated[AdminUser, Depends(admin_for_setup)]) -> AdminUser:
+    return user
+
+
+@router.patch("/me", response_model=AdminOut)
+def update_me(body: ProfileUpdate, db: DbDep, user: Annotated[AdminUser, Depends(admin_for_setup)]) -> AdminUser:
+    user.display_name = body.display_name.strip()
+    db.commit()
     return user
 
 

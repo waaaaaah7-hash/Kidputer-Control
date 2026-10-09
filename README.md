@@ -32,6 +32,8 @@ or send an on-screen message. Everything that happens is recorded in one central
   - Risky changes, such as deleting a PC or changing its PIN, still ask you to **confirm it's
     you**.
   - The Account page lists every **signed-in device** and lets you sign any of them out.
+- **Several parents:** each parent has their own sign-in. Invite another parent from the Account
+  page with a one-time link, remove a parent there too, and see who did what in the activity log.
   - Repeated failed sign-ins lock the account temporarily.
 - **Reversible:** locking always uses the Windows lock (`LockWorkStation`). Nothing is ever shut
   down, so no work is lost.
@@ -129,12 +131,22 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | Version | Planned |
 |---|---|
 | **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download (done). |
-| **1.1** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. Sign in with passkeys and remember trusted devices (done). |
+| **1.1** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. Sign in with passkeys and remember trusted devices (done). Several parents with their own sign-ins (done). |
 | **1.2** | Notifications for major changes: app installs, programs run for the first time, archives, new accounts, Defender, USB drives. A file explorer for the PC's drives with folder-size analysis, like TreeSize. Schedule when common apps are available. Add custom apps. Per-app usage time. |
 | **1.3** | Install requests that a parent approves (Managed mode). Daily screen-time quotas, an "ask for more time" button, schedule templates and holidays. |
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **Several parents:**
+  - **Invite a parent:** on the Account page, enter their email to get a one-time sign-up link.
+    Send it yourself; it works once and expires after 48 hours. They choose a name and password,
+    then set up their own two-factor sign-in.
+  - **Remove a parent:** signs them out everywhere and stops them signing in. The activity log
+    keeps their name.
+  - **Who did what:** activity entries show the parent's name instead of just "Parent".
+  - **Your name:** set the name the other parents see, on the Account page.
+  - Inviting and removing parents ask you to confirm it's you, like other risky changes.
 
 - **Passkeys and remembered devices:**
   - **Passkeys:** sign in with Face ID, a fingerprint, or Windows Hello. A passkey counts as

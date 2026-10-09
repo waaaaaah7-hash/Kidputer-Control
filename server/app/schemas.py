@@ -1,9 +1,18 @@
 import uuid
 from datetime import datetime, time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 # --- Auth ---------------------------------------------------------------------
 
@@ -35,6 +44,61 @@ class AdminOut(BaseModel):
     id: uuid.UUID
     email: str
     totp_enabled: bool
+    # Shown in the activity log; `name` falls back to the start of the email when no name is set.
+    display_name: str | None
+    name: str
+
+
+# A parent's name as shown to the other parents; surrounding spaces don't count.
+DisplayName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+
+
+class ProfileUpdate(BaseModel):
+    display_name: DisplayName
+
+
+class ParentOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    name: str
+    totp_enabled: bool
+    passkeys: int
+    created_at: datetime
+    last_active_at: datetime | None
+    you: bool
+
+
+class InviteCreate(BaseModel):
+    email: EmailStr
+
+
+class InviteOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    invited_by: str | None
+    created_at: datetime
+    expires_at: datetime
+
+
+class InviteCreated(BaseModel):
+    invite: InviteOut
+    # Shown once: the secret part is after "#", so it never reaches the server or its logs when opened.
+    link: str
+
+
+class InviteToken(BaseModel):
+    token: str = Field(min_length=10, max_length=100)
+
+
+class InviteInfo(BaseModel):
+    email: str
+    invited_by: str | None
+    expires_at: datetime
+
+
+class InviteAccept(InviteToken):
+    display_name: DisplayName
+    password: str = Field(min_length=12, max_length=1024)
 
 
 class SessionOut(BaseModel):
@@ -266,6 +330,7 @@ class EventOut(BaseModel):
     occurred_at: datetime
     received_at: datetime
     actor_user_id: uuid.UUID | None
+    actor_name: str | None = None
 
 
 # --- Agent protocol -------------------------------------------------------------

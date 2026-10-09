@@ -141,6 +141,8 @@ def login_verify(body: PasskeyVerifyRequest, request: Request, response: Respons
     challenge = _take_challenge(db, body.challenge_id, "login", None)
     passkey = _verify_assertion(db, request, body, challenge, None)
     user = db.get(AdminUser, passkey.user_id, with_for_update=True)
+    if user.disabled_at is not None:
+        raise _NOT_RECOGNISED
     if is_locked(user):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "account temporarily locked; try again later")
     user.failed_logins = 0

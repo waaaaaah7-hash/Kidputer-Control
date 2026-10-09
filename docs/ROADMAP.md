@@ -36,18 +36,19 @@ practicality.
 | 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
 | 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
 | 21 | Remember this device, with a signed-in devices page and re-checks for risky actions **(done)** | Requested | S | High | High |
+| 22 | Several parents: invite by link, remove, and names in the activity log **(done)** | Requested | S | High | High |
 
 ## Release plan
 
 | Version | Contents |
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
-| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). |
+| **1.1** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
 | **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
-#20 and #21 change only the server and dashboard, not the PC agent, so they can ship ahead of the
+#20, #21 and #22 change only the server and dashboard, not the PC agent, so they can ship ahead of the
 rest of 1.1 if wanted. #10 together with #16 is the most valuable early step whichever mode is chosen, so it moves up to
 1.1. #17 shares the process-start monitoring with #1, and #18 carries the most security risk, so it
 comes last.
@@ -429,3 +430,17 @@ too. Two safeguards keep long sign-ins safe:
 
 **Implementation:** a long-lived, revocable "remembered device" token (stored only as a hash, like
 sessions today), plus a recent-verification timestamp on each session for the re-checks.
+
+## 22. Several parents — S — done
+
+Both parents can manage the same PCs, each with their own sign-in.
+
+- **Invite:** on the Account page, enter the other parent's email to get a one-time sign-up link.
+  You send it yourself (the app doesn't send email yet; see #10). It works once and expires after
+  48 hours. They choose a name and password, then set up their own two-factor sign-in and
+  passkeys.
+- **Remove:** a parent can remove another parent (not themselves). That signs them out everywhere
+  and stops their sign-in. Their name stays in the activity log.
+- **Who did what:** activity entries for parent actions show the parent's name.
+- Every parent sees and controls every PC. Per-parent permissions (for example, a grandparent
+  who can only add extra time) could come later if needed.

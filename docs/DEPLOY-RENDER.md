@@ -37,8 +37,8 @@ page for current costs.
    It's only read while no admin exists, but it shouldn't stay stored.
 5. Under **Account**, change your password.
 
-To add a second parent, create them from the Render **Shell** (paid instances):
-`python -m app.cli create-admin other@example.com`.
+To add a second parent, go to **Account → Parents**, enter their email, and send them the
+one-time link it shows. It works once and expires after 48 hours. No Render Shell is needed.
 
 ## 3. Add the child's PC
 
@@ -92,6 +92,7 @@ All settings are environment variables. Defaults are in `server/app/config.py`.
 | `KC_REVERIFY_MINUTES` | `10` | How recent a passkey or code check must be before risky changes |
 | `KC_COOKIE_SECURE` | `true` | Set `false` only for local plain-HTTP development |
 | `KC_ENROLLMENT_CODE_TTL_HOURS` | `24` | How long an enrollment code stays valid |
+| `KC_INVITE_TTL_HOURS` | `48` | How long a parent invite link stays valid |
 | `KC_STATIC_DIR` | `/srv/static` in the image | Built dashboard |
 | `KC_AGENT_DIR` | `/srv/agent` in the image | Agent files bundled into installer downloads |
-| `KC_PUBLIC_URL` | empty | Address written into installer downloads. Leave empty to use the address the dashboard was opened on; set it if you use a custom domain and want installers to use it. |
+| `KC_PUBLIC_URL` | empty | Address written into installer downloads. Leave empty to use the address the dashboard was opened on; set it if you use a custom domain and want installers and invite links to use it. |

@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { api, type Passkey } from "../api";
+import { api, type Parent, type Passkey } from "../api";
 import { useAuth } from "../auth";
+import { UserCancelled } from "../cancel";
 import { authMethodLabel, describeUserAgent, formatDateTime, relativeTime } from "../format";
 import { addPasskey, passkeysSupported } from "../passkeys";
+import { useReauth } from "../reauthContext";
 import { ActionButton, Badge, Card, ErrorNote, Spinner, errorMessage, useLoader, useToast } from "../ui";
 
 export default function Account() {
@@ -14,6 +16,7 @@ export default function Account() {
       </div>
       <div className="columns">
         <div className="stack">
+          <YourNameCard />
           <PasskeysCard />
           <Card title="Two-factor sign-in">
             <p>
@@ -27,11 +30,176 @@ export default function Account() {
           <ChangePasswordCard />
         </div>
         <div className="stack">
+          <ParentsCard />
           <SignedInDevicesCard />
           <RememberedDevicesCard />
         </div>
       </div>
     </>
+  );
+}
+
+// --- Your name and the other parents --------------------------------------------------------------------
+
+function YourNameCard() {
+  const { admin, refresh } = useAuth();
+  const [name, setName] = useState(admin?.display_name ?? "");
+  const changed = name.trim() !== (admin?.display_name ?? "");
+  return (
+    <Card title="Your name">
+      <p className="muted small">Shown to the other parents, and next to everything you do in the activity log.</p>
+      <div className="row wrap add-passkey">
+        <input aria-label="Your name" placeholder={admin?.name} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} />
+        <ActionButton
+          variant="primary"
+          success="Name saved"
+          disabled={!name.trim() || !changed}
+          onClick={async () => {
+            await api.updateMe(name.trim());
+            await refresh();
+          }}
+        >
+          Save
+        </ActionButton>
+      </div>
+    </Card>
+  );
+}
+
+function ParentsCard() {
+  const parents = useLoader(() => api.parents(), []);
+  const invites = useLoader(() => api.invites(), []);
+  const [email, setEmail] = useState("");
+  const [link, setLink] = useState<{ email: string; url: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const reauth = useReauth();
+
+  async function invite(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await reauth(() => api.createInvite(email.trim()));
+      setLink({ email: r.invite.email, url: r.link });
+      setEmail("");
+      await invites.reload();
+    } catch (err) {
+      if (!(err instanceof UserCancelled)) toast(errorMessage(err), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Link copied");
+    } catch {
+      toast("Couldn't copy. Select the link and copy it yourself.", "danger");
+    }
+  }
+
+  return (
+    <Card title="Parents">
+      <p className="muted small">Everyone here can see and change every PC. Each parent signs in with their own password and two-factor sign-in.</p>
+      <ErrorNote error={parents.error ?? invites.error} />
+      {parents.data === undefined ? (
+        <Spinner />
+      ) : (
+        <ul className="list" data-testid="parent-list">
+          {parents.data.map((p) => (
+            <ParentRow key={p.id} parent={p} onChange={parents.reload} />
+          ))}
+        </ul>
+      )}
+      {!!invites.data?.length && (
+        <>
+          <h3>Waiting to join</h3>
+          <ul className="list" data-testid="invite-list">
+            {invites.data.map((i) => (
+              <li key={i.id} className="list-row">
+                <div className="grow">
+                  <strong className="wrap-anywhere">{i.email}</strong>
+                  <div className="muted small">
+                    Invited {relativeTime(i.created_at)}
+                    {i.invited_by ? ` by ${i.invited_by}` : ""} · link expires {formatDateTime(i.expires_at)}
+                  </div>
+                </div>
+                <ActionButton
+                  variant="ghost"
+                  success="Invite cancelled"
+                  onClick={async () => {
+                    await api.cancelInvite(i.id);
+                    if (link?.email === i.email) setLink(null);
+                    await invites.reload();
+                  }}
+                >
+                  Cancel
+                </ActionButton>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {link && (
+        <div className="invite-link stack" data-testid="invite-link">
+          <p className="small">
+            Send this link to <strong className="wrap-anywhere">{link.email}</strong> yourself, by text or email. It works once and expires in 48
+            hours. Anyone with it can join, so don't post it anywhere public.
+          </p>
+          <code className="secret">{link.url}</code>
+          <div className="row wrap">
+            <button type="button" className="btn btn-primary" onClick={() => void copy(link.url)}>
+              Copy link
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setLink(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+      <form className="row wrap add-passkey" onSubmit={invite}>
+        <input
+          type="email"
+          aria-label="Email of the parent to invite"
+          placeholder="Their email address"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <button type="submit" className="btn btn-secondary" disabled={busy} aria-busy={busy}>
+          Invite a parent
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+function ParentRow({ parent, onChange }: { parent: Parent; onChange: () => Promise<void> }) {
+  return (
+    <li className="list-row">
+      <div className="grow">
+        <strong>{parent.name}</strong> {parent.you && <Badge tone="ok">You</Badge>}
+        {!parent.totp_enabled && <Badge tone="warn">Still setting up</Badge>}
+        <div className="muted small wrap-anywhere">
+          {parent.email} · {parent.last_active_at ? `active ${relativeTime(parent.last_active_at)}` : "not signed in yet"}
+          {parent.passkeys > 0 ? ` · ${parent.passkeys} passkey${parent.passkeys === 1 ? "" : "s"}` : ""}
+        </div>
+      </div>
+      {!parent.you && (
+        <ActionButton
+          variant="ghost"
+          confirm={`Remove ${parent.name} as a parent? They'll be signed out everywhere and won't be able to sign in again. The activity log keeps their name.`}
+          success={`${parent.name} removed`}
+          onClick={async () => {
+            await api.removeParent(parent.id);
+            await onChange();
+          }}
+        >
+          Remove
+        </ActionButton>
+      )}
+    </li>
   );
 }
 

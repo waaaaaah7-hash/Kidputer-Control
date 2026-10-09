@@ -31,7 +31,13 @@ def _load_session(request: Request, db: Session, settings: Settings, stage: str)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
     sess = db.scalar(select(AdminSession).where(AdminSession.token_hash == token_hash(token)))
     now = utcnow()
-    if sess is None or sess.revoked_at is not None or sess.expires_at <= now or sess.stage != stage:
+    if (
+        sess is None
+        or sess.revoked_at is not None
+        or sess.expires_at <= now
+        or sess.stage != stage
+        or sess.user.disabled_at is not None  # a removed parent
+    ):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
     # For the signed-in devices page; throttled so ordinary requests don't all write.
     if sess.last_seen_at is None or now - sess.last_seen_at > _LAST_SEEN_EVERY:

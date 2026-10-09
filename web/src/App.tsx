@@ -5,6 +5,7 @@ import Account from "./pages/Account";
 import Activity from "./pages/Activity";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
+import Invite from "./pages/Invite";
 import Login from "./pages/Login";
 import TotpSetup from "./pages/TotpSetup";
 
@@ -13,6 +14,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/setup-2fa" element={<TotpSetup />} />
+      <Route path="/invite" element={<Invite />} />
       <Route
         element={
           <RequireAuth>

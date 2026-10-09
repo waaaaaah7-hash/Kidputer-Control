@@ -49,7 +49,8 @@ App and process management is planned for a future version. That is why the prod
 
 ### Dashboard authentication
 - **Passwords:** argon2id (`argon2-cffi`), at least 12 characters. There is no public sign-up.
-  Admins are created with `python -m app.cli create-admin <email>`.
+  The first admin comes from `KC_BOOTSTRAP_ADMIN_*` or `python -m app.cli create-admin <email>`;
+  further parents join by invite (below).
 - **2FA:** TOTP (`pyotp`), which works with any authenticator app. It is **mandatory** by default
   (`KC_REQUIRE_TOTP=true`). An admin who has only entered a password can reach just the TOTP
   setup endpoints. A code can be off by one 30-second step, and each code works only once.
@@ -77,7 +78,7 @@ App and process management is planned for a future version. That is why the prod
 - **Confirm it's you before risky actions:** each session records when a second factor (TOTP or
   passkey) was last used.
   - **Covered actions:** deleting a PC, setting or clearing its PIN, issuing an enrollment code
-    or installer, and adding or removing passkeys.
+    or installer, adding or removing passkeys, and inviting or removing a parent.
   - **Rule:** these need that check within the last 10 minutes (`KC_REVERIFY_MINUTES`).
     Otherwise the API answers `403 {"code": "reauth_required"}`, and the dashboard asks for a
     passkey or code and retries.
@@ -89,8 +90,25 @@ App and process management is planned for a future version. That is why the prod
   and we only grant preflights to the dashboard's own origin.
 - **Brute force:** 5 failed password or TOTP attempts lock the account for 15 minutes. An unknown
   email and a wrong password give the same response and take the same time.
-- **Scope:** a single household. Every admin can see every device. Add tenancy only if this ever
-  serves more than one family.
+- **Scope:** a single household. Every admin (parent) can see and change every device. Add tenancy
+  only if this ever serves more than one family.
+- **Several parents** (`server/app/routers/parents.py`):
+  - **Invites:** a signed-in parent enters an email and gets a one-time link,
+    `<site>/invite#<token>`. The token sits after the `#`, so browsers never send it to the
+    server in the address or write it to logs; the page posts it in the request body. Only its
+    SHA-256 is stored (`admin_invites`). It works once, expires after 48 hours
+    (`KC_INVITE_TTL_HOURS`), and a newer invite for the same email cancels older ones. The app
+    doesn't send email: the parent passes the link on themselves.
+  - **Accepting:** the new parent picks a name and password and is signed in with a password-only
+    session, so, as with any first sign-in, only TOTP setup works until 2FA is on.
+  - **Removing:** sets `admin_users.disabled_at`, revokes their sessions and remembered devices,
+    and deletes their passkeys. The row stays so the activity log keeps their name. A removed
+    parent's sign-in gets the same answer as an unknown email. Inviting the same email again
+    brings the account back with a new password and no 2FA, which they then set up again. A
+    parent can't remove themselves.
+  - Creating an invite and removing a parent are *confirm it's you* actions.
+  - **Names:** `admin_users.display_name`, editable on the Account page; without one, the part of
+    the email before `@` is shown. The events API adds `actor_name` to parent actions.
 
 ### Device (agent) authentication
 1. The admin creates a device in the dashboard and gets a one-time **enrollment code**
@@ -126,7 +144,8 @@ A 4–10 digit PIN is brute-forceable by anyone who can read the hash. So:
 | custom message | `messages` | `persistent` or `closable`. A partial unique index allows at most one live message per device. `displayed_at`/`dismissed_at` come from agent events and `cleared_at` from the admin. |
 | immediate lock | `lock_requests` | At most one active per device. It **does not cancel** overrides: the agent applies it on top of them. It stays in force until an admin clears it or a parent enters the PIN at the lock screen. |
 | activity log | `activity_events` | Central log for agent, admin, and system events. `(device_id, client_event_id)` is unique, so agent retries are idempotent. |
-| — | `devices`, `admin_users`, `admin_sessions` | Devices and dashboard accounts. |
+| — | `devices`, `admin_users`, `admin_sessions` | Devices and dashboard accounts. A removed parent keeps their `admin_users` row with `disabled_at` set. |
+| parent invites | `admin_invites` | One-time sign-up links: token hash, expiry, accepted or cancelled time. |
 
 Migrations live in `server/migrations` (Alembic). CI runs `alembic check` to catch drift between
 the models and the migrations.

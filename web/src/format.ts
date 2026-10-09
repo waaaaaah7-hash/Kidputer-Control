@@ -157,6 +157,10 @@ const EVENT_LABELS: Record<string, string> = {
   "admin.device_forgotten": "Remembered device forgotten",
   "admin.session_revoked": "Signed out a device",
   "device.installer_downloaded": "Installer downloaded",
+  "admin.invite_created": "Parent invited",
+  "admin.invite_cancelled": "Parent invite cancelled",
+  "admin.invite_accepted": "Parent joined",
+  "admin.parent_removed": "Parent removed",
 };
 
 export function eventLabel(e: Pick<ActivityEvent, "event_type">): string {

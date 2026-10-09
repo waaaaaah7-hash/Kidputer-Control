@@ -104,6 +104,7 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
 - Render deployment (`render.yaml`, `Dockerfile`).
 - One-click installer download.
 - Passkeys, remember this device, and confirm-it's-you for risky actions.
+- Several parents: invite by one-time link, remove, and names in the activity log.
 
 **Not yet verified on real hardware**
 - Everything Windows-only: the WinForms lock screen, `CreateProcessAsUser`, the scheduled task,
