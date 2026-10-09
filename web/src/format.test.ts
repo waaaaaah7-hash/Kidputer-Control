@@ -14,6 +14,7 @@ function device(overrides: Partial<Device> = {}): Device {
     last_seen_at: "2026-01-12T21:59:40Z",
     last_status: { mode: "none", reason: "none" },
     created_at: "2026-01-01T00:00:00Z",
+    mode: "managed",
     ...overrides,
   };
 }

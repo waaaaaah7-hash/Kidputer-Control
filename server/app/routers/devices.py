@@ -55,6 +55,7 @@ def _device_out(d: Device) -> DeviceOut:
         last_seen_at=d.last_seen_at,
         last_status=d.last_status,
         created_at=d.created_at,
+        mode=d.mode,
     )
 
 
@@ -88,7 +89,7 @@ def list_devices(db: DbDep, admin: AdminDep) -> list[DeviceOut]:
 
 @router.post("/devices", response_model=EnrollmentCodeOut, status_code=status.HTTP_201_CREATED)
 def create_device(body: DeviceCreate, db: DbDep, settings: SettingsDep, admin: AdminDep) -> EnrollmentCodeOut:
-    device = Device(id=uuid.uuid4(), name=body.name, timezone=body.timezone)
+    device = Device(id=uuid.uuid4(), name=body.name, timezone=body.timezone, mode=body.mode)
     device.settings = DeviceSettings()
     db.add(device)
     out = _issue_enrollment_code(device, settings)
@@ -145,17 +146,19 @@ def download_installer(
             "This PC is already installed. A new installer disconnects it until it's reinstalled; confirm to continue.",
         )
     api_url = (settings.public_url or str(request.base_url)).rstrip("/")
+    if body.mode is not None:
+        device.mode = body.mode
     device.token_hash = None
     code = _issue_enrollment_code(device, settings)
     try:
         data = build_installer_zip(
-            Path(settings.agent_dir), api_url, code.enrollment_code, code.expires_at, device.name, body.child_user
+            Path(settings.agent_dir), api_url, code.enrollment_code, code.expires_at, device.name, body.child_user, device.mode
         )
     except FileNotFoundError as exc:
         db.rollback()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Installer files are not available on this server") from exc
     log_admin(db, admin, "device.installer_downloaded", f"Installer downloaded for '{device.name}'", device.id,
-              {"child_user": body.child_user, "replaced_install": body.replace})
+              {"child_user": body.child_user, "replaced_install": body.replace, "mode": device.mode})
     db.commit()
     return Response(
         content=data,

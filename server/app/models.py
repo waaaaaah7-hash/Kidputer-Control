@@ -179,6 +179,12 @@ class Device(Base):
     # Most recent status reported by the agent's heartbeat (locked, tamper state, ...).
     last_status: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _created_at()
+    # 'managed': the child has a standard Windows account and can't switch enforcement off.
+    # 'trusted': the child is an administrator; enforcement works day to day, but the safety net is
+    # notifications (installs, "PC went silent").
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'managed'"))
+
+    __table_args__ = (CheckConstraint("mode IN ('managed', 'trusted')", name="ck_devices_mode"),)
 
     settings: Mapped["DeviceSettings"] = relationship(back_populates="device", uselist=False, cascade="all, delete-orphan")
     schedule: Mapped[list["ScheduleEntry"]] = relationship(

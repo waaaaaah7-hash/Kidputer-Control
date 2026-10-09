@@ -55,6 +55,7 @@ $uiCmdLine = '"{0}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -STA -Win
 $ui = @{ Pid = 0; StartTime = $null; SessionId = [KcNative]::NoSession; Launches = New-Object System.Collections.Queue; EverStarted = $false }
 $sync = @{ Phase = 'state'; NextAt = [DateTimeOffset]::MinValue; Failures = 0; LastOkAt = $null; Offline = $true; Unauthorized = $false; SkewReportedAt = [DateTimeOffset]::MinValue; SkewSeconds = $null }
 $tamper = @{ NextAt = [DateTimeOffset]::MinValue; Problems = @() }
+$adminCheck = @{ NextAt = [DateTimeOffset]::MinValue; IsAdmin = $false }
 $lastMode = $null
 $lastUiJson = $null
 $pinResult = $null
@@ -75,6 +76,14 @@ function Test-ChildIsAdmin {
         $admins = Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop
         return [bool]($admins | Where-Object { $_.SID -and $_.SID.Value -eq $childSid })
     } catch { return $false }
+}
+
+function Update-ChildAdminStatus {
+    <# Re-checked every 10 minutes; the dashboard compares it with the PC's mode (Managed or Trusted). #>
+    $now = Get-KcNow
+    if ($now -lt $adminCheck.NextAt) { return }
+    $adminCheck.NextAt = $now.AddMinutes(10)
+    $adminCheck.IsAdmin = Test-ChildIsAdmin
 }
 
 # --- UI agent supervision -----------------------------------------------------------------------------------
@@ -257,6 +266,7 @@ function Get-Status {
         queued_events         = (Get-KcQueuedEvents).Count
         clock_skew_seconds    = $sync.SkewSeconds
         pin_locked_until      = $local.pin_locked_until
+        child_is_admin        = $adminCheck.IsAdmin
     }
     if ($d -and $d.UnlockAt) { $s.unlock_at = ConvertTo-KcIso $d.UnlockAt }
     if ($d -and $d.OverrideEndsAt) { $s.override_ends_at = ConvertTo-KcIso $d.OverrideEndsAt }
@@ -338,7 +348,9 @@ function Update-Enforcement {
 
 Add-KcEvent -Type 'agent.started' -Message "Watchdog $(Get-KcAgentVersion) started on $([Environment]::MachineName)"
 if ($null -eq $token) { Add-KcEvent -Type 'agent.unauthorized' -Severity critical -Message 'No device token; enforcing from cache only' }
-if (Test-ChildIsAdmin) {
+Update-ChildAdminStatus
+# In Trusted mode an administrator child is expected; in Managed mode it's a hole in enforcement.
+if ($adminCheck.IsAdmin -and (Get-KcProp $state 'mode' 'managed') -ne 'trusted') {
     Add-KcEvent -Type 'agent.child_is_admin' -Severity critical -Message 'The monitored account is a local administrator and could disable enforcement'
 }
 
@@ -350,6 +362,7 @@ while ($true) {
         Update-UiAgent
         Invoke-SyncStep
         Invoke-TamperCheck
+        Update-ChildAdminStatus
     } catch {
         Write-KcLog -Level error -Message ("Watchdog loop error: {0} {1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
         Start-Sleep -Seconds 2

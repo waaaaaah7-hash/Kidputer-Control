@@ -635,9 +635,9 @@ function Resolve-KcInstallSettings {
     <#
         Merge install-config.json (written into the dashboard's one-click download) with explicit
         Install.ps1 parameters. Explicit parameters win. Returns @{ApiUrl; EnrollmentCode; ChildUser;
-        AllowInsecureHttp; ExpiresAt; FromConfig}.
+        AllowInsecureHttp; ExpiresAt; FromConfig; Mode}. Mode is 'managed' (the default) or 'trusted'.
     #>
-    param($Config, [string]$ApiUrl, [string]$EnrollmentCode, [string]$ChildUser, [switch]$AllowInsecureHttp)
+    param($Config, [string]$ApiUrl, [string]$EnrollmentCode, [string]$ChildUser, [switch]$AllowInsecureHttp, [string]$Mode)
     $r = @{
         ApiUrl            = $ApiUrl
         EnrollmentCode    = $EnrollmentCode
@@ -645,30 +645,35 @@ function Resolve-KcInstallSettings {
         AllowInsecureHttp = [bool]$AllowInsecureHttp
         ExpiresAt         = $null
         FromConfig        = $false
+        Mode              = $Mode
     }
-    if ($null -eq $Config) { return $r }
-    $r.FromConfig = $true
-    if (-not $r.ApiUrl) { $r.ApiUrl = [string](Get-KcProp $Config 'api_url' '') }
-    if (-not $r.EnrollmentCode) {
-        $r.EnrollmentCode = [string](Get-KcProp $Config 'enrollment_code' '')
-        $r.ExpiresAt = ConvertTo-KcDate (Get-KcProp $Config 'expires_at')
+    if ($null -ne $Config) {
+        $r.FromConfig = $true
+        if (-not $r.ApiUrl) { $r.ApiUrl = [string](Get-KcProp $Config 'api_url' '') }
+        if (-not $r.EnrollmentCode) {
+            $r.EnrollmentCode = [string](Get-KcProp $Config 'enrollment_code' '')
+            $r.ExpiresAt = ConvertTo-KcDate (Get-KcProp $Config 'expires_at')
+        }
+        if (-not $r.ChildUser) { $r.ChildUser = [string](Get-KcProp $Config 'child_user' '') }
+        if (-not $r.AllowInsecureHttp) { $r.AllowInsecureHttp = [bool](Get-KcProp $Config 'allow_insecure_http' $false) }
+        if (-not $r.Mode) { $r.Mode = [string](Get-KcProp $Config 'mode' '') }
     }
-    if (-not $r.ChildUser) { $r.ChildUser = [string](Get-KcProp $Config 'child_user' '') }
-    if (-not $r.AllowInsecureHttp) { $r.AllowInsecureHttp = [bool](Get-KcProp $Config 'allow_insecure_http' $false) }
+    if (@('managed', 'trusted') -notcontains $r.Mode) { $r.Mode = 'managed' }
     $r
 }
 
 function Select-KcChildCandidates {
     <#
         Windows accounts worth offering as "the child": enabled, not built-in (Administrator, Guest,
-        DefaultAccount, WDAGUtilityAccount), not an administrator, and not the parent running the installer.
+        DefaultAccount, WDAGUtilityAccount), and not the parent running the installer. Administrators are
+        left out unless -IncludeAdmins (Trusted mode, where the child's account is an administrator).
         $Users: objects with Name, FullName, Enabled and SID (as from Get-LocalUser).
     #>
-    param([object[]]$Users, [string[]]$AdminSids = @(), [string]$CurrentSid)
+    param([object[]]$Users, [string[]]$AdminSids = @(), [string]$CurrentSid, [switch]$IncludeAdmins)
     $builtinRids = @('500', '501', '503', '504')
     , @($Users | Where-Object {
             $sid = [string]$_.SID
-            $_.Enabled -and $sid -and $sid -ne $CurrentSid -and ($AdminSids -notcontains $sid) -and
+            $_.Enabled -and $sid -and $sid -ne $CurrentSid -and ($IncludeAdmins -or ($AdminSids -notcontains $sid)) -and
             ($builtinRids -notcontains ($sid -split '-')[-1])
         } | Sort-Object Name)
 }

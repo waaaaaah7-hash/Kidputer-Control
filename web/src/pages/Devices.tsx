@@ -43,6 +43,7 @@ function DeviceCard({ device }: { device: Device }) {
       <p>{status.detail}</p>
       <p className="muted small">
         {device.enrolled ? `${device.hostname ?? "PC"} · seen ${relativeTime(device.last_seen_at)}` : "Not installed yet"}
+        {device.mode === "trusted" ? " · Trusted: the child could switch it off" : ""}
       </p>
     </Link>
   );

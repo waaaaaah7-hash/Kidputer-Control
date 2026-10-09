@@ -30,7 +30,7 @@ practicality.
 | 13 | Agent auto-update | Suggested | M | Medium | High, once #1–4 ship |
 | 14 | Several children on one PC | Suggested | M | High | Depends on the household |
 | 15 | Web/site filtering | Often expected | L | Low | Better handled outside the app |
-| 16 | Managed and Trusted modes, chosen in the installer | Requested | S | High | High |
+| 16 | Managed and Trusted modes, chosen in the installer **(done)** | Requested | S | High | High |
 | 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
 | 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
@@ -231,7 +231,7 @@ PC):
   Examples are Cloudflare for Families (free) and NextDNS.
 - The practical route is a setup guide in the docs rather than a feature.
 
-## 16. Managed and Trusted modes — S
+## 16. Managed and Trusted modes — S — done
 
 The installer, and the dashboard's download dialog, ask which mode the PC uses.
 

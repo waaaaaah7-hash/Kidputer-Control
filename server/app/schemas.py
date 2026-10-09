@@ -168,9 +168,13 @@ def _check_tz(value: str) -> str:
     return value
 
 
+DeviceMode = Literal["managed", "trusted"]
+
+
 class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     timezone: str = "UTC"
+    mode: DeviceMode = "managed"
 
     _tz = field_validator("timezone")(_check_tz)
 
@@ -178,6 +182,7 @@ class DeviceCreate(BaseModel):
 class DeviceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     timezone: str | None = None
+    mode: DeviceMode | None = None
 
     @field_validator("timezone")
     @classmethod
@@ -197,6 +202,7 @@ class DeviceOut(BaseModel):
     last_seen_at: datetime | None
     last_status: dict[str, Any] | None
     created_at: datetime
+    mode: DeviceMode
 
 
 class EnrollmentCodeOut(BaseModel):
@@ -210,6 +216,8 @@ class InstallerRequest(BaseModel):
     child_user: str | None = Field(default=None, max_length=104, pattern=r"^[^\x00-\x1f\"/:*?<>|]+$")
     # Required when the PC is already installed: a new code disconnects it until it's reinstalled.
     replace: bool = False
+    # Also saved as the device's mode. Trusted lets the installer accept an administrator child account.
+    mode: DeviceMode | None = None
 
 
 class ScheduleEntryIn(BaseModel):

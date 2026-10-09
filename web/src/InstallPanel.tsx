@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type EnrollmentCode } from "./api";
+import { api, type DeviceMode, type EnrollmentCode } from "./api";
 import EnrollmentInfo from "./EnrollmentInfo";
 import { ActionButton } from "./ui";
 
@@ -24,19 +24,22 @@ export default function InstallPanel({
   deviceId,
   enrolled,
   initialCode = null,
+  initialMode = "managed",
   onChange,
 }: {
   deviceId: string;
   enrolled: boolean;
   initialCode?: EnrollmentCode | null;
+  initialMode?: DeviceMode;
   onChange?: () => Promise<void>;
 }) {
   const [code, setCode] = useState<EnrollmentCode | null>(initialCode);
   const [childUser, setChildUser] = useState("");
+  const [mode, setMode] = useState<DeviceMode>(initialMode);
   const [downloaded, setDownloaded] = useState(false);
 
   async function download() {
-    const r = await api.downloadInstaller(deviceId, { child_user: childUser.trim() || undefined, replace: enrolled });
+    const r = await api.downloadInstaller(deviceId, { child_user: childUser.trim() || undefined, replace: enrolled, mode });
     saveBlob(r.blob, r.filename);
     setCode(r.code);
     setDownloaded(true);
@@ -45,6 +48,7 @@ export default function InstallPanel({
 
   return (
     <div className="stack install">
+      <ModeChoice mode={mode} onChange={setMode} />
       <label>
         Child's Windows account (optional, the installer lets you pick it if left blank)
         <input maxLength={104} placeholder="e.g. Sam" value={childUser} onChange={(e) => setChildUser(e.target.value)} />
@@ -93,5 +97,34 @@ export default function InstallPanel({
         )}
       </details>
     </div>
+  );
+}
+
+/** Managed or Trusted: what kind of Windows account the child uses, and what that means. */
+export function ModeChoice({ mode, onChange }: { mode: DeviceMode; onChange: (m: DeviceMode) => void }) {
+  return (
+    <fieldset className="mode-choice stack">
+      <legend>What kind of Windows account does your child use?</legend>
+      <label className="inline">
+        <input type="radio" name="device-mode" checked={mode === "managed"} onChange={() => onChange("managed")} />
+        <span>
+          <strong>Standard account (Managed)</strong>
+          <span className="muted small block">
+            Recommended. The child can't switch Kidputer Control off. Apps from the Microsoft Store install freely; other installs go
+            through a request you approve.
+          </span>
+        </span>
+      </label>
+      <label className="inline">
+        <input type="radio" name="device-mode" checked={mode === "trusted"} onChange={() => onChange("trusted")} />
+        <span>
+          <strong>Administrator account (Trusted)</strong>
+          <span className="muted small block">
+            The child installs anything themselves. The schedule still applies, but they could switch it off, so you get notified about
+            installs and if the PC goes silent.
+          </span>
+        </span>
+      </label>
+    </fieldset>
   );
 }

@@ -142,6 +142,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 }
 input:disabled { opacity: 0.5; }
 fieldset { border: 0; padding: 0; margin: 0; }
+.mode-choice legend { font-weight: 600; margin-bottom: 0.25rem; }
+.mode-choice label.inline { align-items: flex-start; }
+.mode-choice input[type=radio] { margin-top: 0.3rem; }
+.block { display: block; }
 .switch { font-weight: 600; }
 
 .btn {

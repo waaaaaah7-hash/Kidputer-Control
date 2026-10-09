@@ -277,5 +277,24 @@ Test 'child account picker offers only enabled, standard, non-built-in accounts'
     Assert-Equal 0 (Select-KcChildCandidates -Users @() -CurrentSid 'x').Count
 }
 
+Test 'Trusted mode also offers administrator accounts, never the parent running the installer' {
+    $base = 'S-1-5-21-1-2-3'
+    $users = @(
+        [pscustomobject]@{ Name = 'Parent'; FullName = ''; Enabled = $true; SID = "$base-1001" },
+        [pscustomobject]@{ Name = 'Sam'; FullName = ''; Enabled = $true; SID = "$base-1002" }
+    )
+    $c = Select-KcChildCandidates -Users $users -AdminSids @("$base-1001", "$base-1002") -CurrentSid "$base-1001" -IncludeAdmins
+    Assert-Equal @('Sam') @($c | ForEach-Object { $_.Name })
+}
+
+Test 'install mode comes from the config, defaults to managed, and rejects unknown values' {
+    Assert-Equal 'managed' (Resolve-KcInstallSettings -Config $null).Mode
+    $cfg = '{"api_url":"https://kc.example.com","mode":"trusted"}' | ConvertFrom-Json
+    Assert-Equal 'trusted' (Resolve-KcInstallSettings -Config $cfg).Mode
+    Assert-Equal 'managed' (Resolve-KcInstallSettings -Config $cfg -Mode 'managed').Mode
+    $bad = '{"mode":"anything"}' | ConvertFrom-Json
+    Assert-Equal 'managed' (Resolve-KcInstallSettings -Config $bad).Mode
+}
+
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 Complete-Tests

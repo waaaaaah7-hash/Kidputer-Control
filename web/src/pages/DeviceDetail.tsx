@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
-import InstallPanel from "../InstallPanel";
+import InstallPanel, { ModeChoice } from "../InstallPanel";
 import { UserCancelled } from "../cancel";
 import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
@@ -80,10 +80,19 @@ function StatusHeader({ device }: { device: Device }) {
   if (s.clock_skew_seconds && Math.abs(s.clock_skew_seconds) > 300) warnings.push(`The PC's clock is off by ${Math.round(s.clock_skew_seconds / 60)} minutes.`);
   if (s.pin_locked_until && new Date(s.pin_locked_until).getTime() > Date.now())
     warnings.push(`PIN entry is locked after wrong attempts until ${formatTime(s.pin_locked_until)}.`);
+  if (device.mode === "managed" && s.child_is_admin)
+    warnings.push("Your child's Windows account is an administrator, so they could switch Kidputer Control off. Make it a standard account in Windows Settings, or switch this PC to Trusted mode.");
   return (
     <header className="device-head">
       <div>
-        <h1>{device.name}</h1>
+        <h1>
+          {device.name}{" "}
+          {device.mode === "trusted" && (
+            <span title="The child's account is an administrator: the schedule applies, but the child could switch it off.">
+              <Badge tone="info">Trusted</Badge>
+            </span>
+          )}
+        </h1>
         <p className="muted small">
           {device.enrolled
             ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
@@ -427,6 +436,7 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
 function DevicePanel({ device, onChange }: { device: Device; onChange: () => Promise<void> }) {
   const [name, setName] = useState(device.name);
   const [tz, setTz] = useState(device.timezone);
+  const [mode, setMode] = useState(device.mode);
   const navigate = useNavigate();
 
   return (
@@ -445,12 +455,20 @@ function DevicePanel({ device, onChange }: { device: Device; onChange: () => Pro
           </select>
         </label>
       </div>
+      <ModeChoice mode={mode} onChange={setMode} />
+      {mode !== device.mode && (
+        <p className="muted small">
+          {mode === "trusted"
+            ? "Switching needs no reinstall. Make the child's account an administrator in Windows Settings if it isn't already."
+            : "Switching needs no reinstall. Make the child's account a standard user in Windows Settings so they can't switch Kidputer Control off."}
+        </p>
+      )}
       <div className="form-actions">
         <ActionButton
-          disabled={!name.trim() || (name === device.name && tz === device.timezone)}
+          disabled={!name.trim() || (name === device.name && tz === device.timezone && mode === device.mode)}
           success="Device updated"
           onClick={async () => {
-            await api.updateDevice(device.id, { name: name.trim(), timezone: tz });
+            await api.updateDevice(device.id, { name: name.trim(), timezone: tz, mode });
             await onChange();
           }}
         >
@@ -462,12 +480,12 @@ function DevicePanel({ device, onChange }: { device: Device; onChange: () => Pro
         <details className="reinstall">
           <summary>Reinstall or move to another PC</summary>
           <p className="muted small">Only needed to repair or move the installation: a new installer disconnects the PC that's installed now.</p>
-          <InstallPanel deviceId={device.id} enrolled onChange={onChange} />
+          <InstallPanel deviceId={device.id} enrolled initialMode={device.mode} onChange={onChange} />
         </details>
       ) : (
         <>
           <h3>Install on the PC</h3>
-          <InstallPanel deviceId={device.id} enrolled={false} onChange={onChange} />
+          <InstallPanel deviceId={device.id} enrolled={false} initialMode={device.mode} onChange={onChange} />
         </>
       )}
       <div className="form-actions">

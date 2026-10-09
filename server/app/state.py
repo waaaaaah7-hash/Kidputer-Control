@@ -65,6 +65,7 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
         "device_id": str(device.id),
         "name": device.name,
         "timezone": device.timezone,
+        "mode": device.mode,
         "enforcement_enabled": s.enforcement_enabled,
         "countdown_seconds": s.countdown_seconds,
         "poll_interval_seconds": s.poll_interval_seconds,

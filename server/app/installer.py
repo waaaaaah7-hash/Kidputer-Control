@@ -57,10 +57,10 @@ def _readme(device_name: str, expires_at: datetime) -> str:
 
 
 def build_installer_zip(agent_dir: Path, api_url: str, enrollment_code: str, expires_at: datetime,
-                        device_name: str, child_user: str | None) -> bytes:
+                        device_name: str, child_user: str | None, mode: str = "managed") -> bytes:
     if not (agent_dir / "Install.ps1").is_file():
         raise FileNotFoundError(f"agent files not found in {agent_dir}")
-    config = {"api_url": api_url, "enrollment_code": enrollment_code, "expires_at": expires_at.isoformat()}
+    config = {"api_url": api_url, "enrollment_code": enrollment_code, "expires_at": expires_at.isoformat(), "mode": mode}
     if api_url.startswith("http://"):
         config["allow_insecure_http"] = True  # local development server; hosted deployments are https
     if child_user:

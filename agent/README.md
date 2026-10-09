@@ -16,7 +16,12 @@ minute). Every relaunch after the first is logged as `ui_agent.restarted`.
 Requirements:
 - Windows 10 or 11 with Windows PowerShell 5.1, which is built in.
 - An administrator account for the parent to install with.
-- A **standard** (non-administrator) account for the child.
+- An account for the child. Which kind decides the PC's **mode**, chosen in the download dialog:
+  - **Managed** (recommended): the child has a **standard** account and can't switch Kidputer
+    Control off.
+  - **Trusted**: the child's account is an **administrator**. The schedule still applies day to
+    day, but the child *could* switch it off, so the safety net is notifications (installs, and the
+    PC going silent).
 
 **One-click installer (recommended):**
 1. In the dashboard, click **Add a PC** (or open the device's page) and click **Download
@@ -26,8 +31,8 @@ Requirements:
 3. Signed in as a parent (administrator), double-click **Install Kidputer Control**. Click **Yes**
    when Windows asks for permission.
    - If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
-4. Pick the child's account from the numbered list. The list shows only the PC's standard
-   (non-administrator) accounts.
+4. Pick the child's account from the numbered list. In Managed mode the list shows only the PC's
+   standard (non-administrator) accounts; in Trusted mode it includes administrators.
 5. Set the schedule and lock-screen PIN in the dashboard. The PC picks them up within one poll
    interval, 30 seconds by default.
 
@@ -51,7 +56,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```
 
 Leave out `-ChildUser` to pick the account from a list. For a Microsoft account, use
-`-ChildUser MicrosoftAccount\sam@example.com`.
+`-ChildUser MicrosoftAccount\sam@example.com`. Add `-Mode trusted` if the child's account is an
+administrator (Managed mode refuses an administrator account).
+
+To switch mode later, change the account type in Windows Settings and flip the mode on the
+device's page in the dashboard. No reinstall is needed.
 
 To upgrade, run `.\Install.ps1` again with no arguments. It keeps the existing enrollment. To move
 the PC to a new device record, pass a new `-EnrollmentCode`.

@@ -52,7 +52,11 @@ export interface AgentStatus {
   queued_events?: number;
   clock_skew_seconds?: number | null;
   pin_locked_until?: string | null;
+  child_is_admin?: boolean;
 }
+
+/** Managed: the child has a standard account. Trusted: the child is an administrator. */
+export type DeviceMode = "managed" | "trusted";
 
 export interface SignedInSession {
   id: string;
@@ -101,6 +105,7 @@ export interface Device {
   last_seen_at: string | null;
   last_status: AgentStatus | null;
   created_at: string;
+  mode: DeviceMode;
 }
 
 export interface EnrollmentCode {
@@ -248,7 +253,10 @@ export interface InstallerDownload {
 }
 
 /** POST that returns a file. The installer response also carries the newly issued enrollment code. */
-async function downloadInstaller(deviceId: string, body: { child_user?: string; replace?: boolean }): Promise<InstallerDownload> {
+async function downloadInstaller(
+  deviceId: string,
+  body: { child_user?: string; replace?: boolean; mode?: DeviceMode },
+): Promise<InstallerDownload> {
   const res = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/installer`, {
     method: "POST",
     headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1" },
@@ -335,7 +343,7 @@ export const api = {
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),
   createDevice: (name: string, timezone: string) => request<EnrollmentCode>("POST", "/devices", { name, timezone }),
-  updateDevice: (id: string, patch: { name?: string; timezone?: string }) => request<Device>("PATCH", d(id), patch),
+  updateDevice: (id: string, patch: { name?: string; timezone?: string; mode?: DeviceMode }) => request<Device>("PATCH", d(id), patch),
   deleteDevice: (id: string) => request<void>("DELETE", d(id)),
   reissueEnrollmentCode: (id: string) => request<EnrollmentCode>("POST", `${d(id)}/enrollment-code`),
   downloadInstaller,
