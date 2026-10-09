@@ -64,6 +64,7 @@ or send an on-screen message. Everything that happens is recorded in one central
 | `web/` | Parent dashboard: React + TypeScript (Vite) |
 | `agent/` | Windows agent: SYSTEM watchdog, UI agent, installer and uninstaller, tests |
 | `Dockerfile`, `render.yaml` | Single-image build and Render Blueprint (web service + Postgres) |
+| `docs/ROADMAP.md` | Planned features, with effort, feasibility and practicality |
 | `docs/DEPLOY-RENDER.md` | Step-by-step deployment and first sign-in |
 | `docs/ARCHITECTURE.md` | Design decisions, data model, agent protocol |
 | `agent/README.md` | Installing on the child's PC, plus a first-run checklist |
@@ -118,8 +119,16 @@ permissions. Before relying on the agent, run through the checklist in `agent/RE
 
 ## Roadmap
 
-- **App and process management** (next version): control which apps the child can run, and when.
-- Also planned: usage quotas, weekly reports, and bonus time.
+The full plan, with effort, feasibility and practicality for each feature, is in
+[docs/ROADMAP.md](docs/ROADMAP.md). In short:
+
+| Version | Planned |
+|---|---|
+| **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download. |
+| **1.1** | See running apps and processes, and stop them remotely. Agent auto-update. |
+| **1.2** | Schedule when common apps (games, browsers, chat) are available. Add custom apps. Per-app usage time. |
+| **1.3** | Daily screen-time quotas, parent notifications, an "ask for more time" button, schedule templates and holidays. |
+| **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
 
