@@ -131,6 +131,49 @@ export interface SeenApp {
   last_seen: string | null;
 }
 
+export interface DriveInfo {
+  name: string;
+  label: string;
+  type: string;
+  format: string;
+  size: number;
+  free: number;
+}
+
+export interface DrivesReport {
+  updated_at: string | null;
+  drives: DriveInfo[];
+  devices: string[];
+  scans: Record<string, { scanned_at: string; size: number | null; files: number | null; folders: number | null }>;
+  scanning: { drive: string; files: number; started_at: string } | null;
+}
+
+/** One folder in a scan: name, size, size on disk, files, folders, modified (unix s), inaccessible, children. */
+export interface ScanNode {
+  n: string;
+  s: number;
+  a: number;
+  f: number;
+  d: number;
+  m: number;
+  x?: boolean;
+  c?: ScanNode[];
+}
+
+export interface ScanResult {
+  letter: string;
+  scanned_at: string;
+  scan: {
+    root: string;
+    tree: ScanNode;
+    largest: { p: string; s: number; m: number }[];
+    by_type: Record<string, { s: number; f: number }>;
+    inaccessible: number;
+  };
+  previous_scanned_at: string | null;
+  changes: { path: string; size: number; previous: number | null }[];
+}
+
 export interface InviteInfo {
   email: string;
   invited_by: string | null;
@@ -235,6 +278,7 @@ export interface DeviceSettings {
   silent_alert_minutes: number;
   show_window_titles: boolean;
   auto_update: boolean;
+  scan_every_days: number;
   updated_at: string;
 }
 
@@ -472,6 +516,11 @@ export const api = {
   putAppRules: (id: string, rules: AppRuleIn[]) => request<AppRule[]>("PUT", `/devices/${encodeURIComponent(id)}/app-rules`, { rules }),
   usage: (id: string, days = 7) => request<UsageDay[]>("GET", `/devices/${encodeURIComponent(id)}/usage?days=${days}`),
   seenApps: (id: string) => request<SeenApp[]>("GET", `/devices/${encodeURIComponent(id)}/apps/seen`),
+
+  drives: (id: string) => request<DrivesReport>("GET", `/devices/${encodeURIComponent(id)}/drives`),
+  scan: (id: string, letter: string) => request<ScanResult>("GET", `/devices/${encodeURIComponent(id)}/scans/${letter}`),
+  startScan: (id: string, letter: string) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/scans/${letter}`),
+  listFolder: (id: string, path: string) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/files/list`, { path }),
 
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),

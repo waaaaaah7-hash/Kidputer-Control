@@ -256,6 +256,7 @@ class SettingsIn(BaseModel):
     silent_alert_minutes: int | None = Field(default=None, ge=0, le=1440)
     show_window_titles: bool | None = None
     auto_update: bool | None = None
+    scan_every_days: int | None = Field(default=None, ge=0, le=90)
 
 
 class SettingsOut(BaseModel):
@@ -271,6 +272,7 @@ class SettingsOut(BaseModel):
     silent_alert_minutes: int
     show_window_titles: bool
     auto_update: bool
+    scan_every_days: int
     updated_at: datetime
 
 

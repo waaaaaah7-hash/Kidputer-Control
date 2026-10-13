@@ -539,3 +539,67 @@ def test_app_rules_custom_apps_and_usage(page, live_app):
     expect(page.get_by_test_id("app-rules")).to_be_visible()
     assert_fits_screen(page)
     shot(page, "52-app-rules-phone")
+
+
+def test_files_tab(page, live_app):
+    _, secret = make_admin()
+    agent = make_enrolled_device(live_app)
+    GB = 1024 ** 3
+    agent.post("/api/v1/agent/reports/drives", json={"drives": [
+        {"name": "C:\\", "label": "", "type": "Fixed", "format": "NTFS", "size": 500 * GB, "free": 40 * GB},
+        {"name": "E:\\", "label": "SANDISK", "type": "Removable", "format": "FAT32", "size": 32 * GB, "free": 30 * GB},
+    ], "devices": ["Sam's iPhone"]})
+
+    def scan(downloads_gb: int) -> dict:
+        downloads = {"n": "Downloads", "s": downloads_gb * GB, "a": downloads_gb * GB, "f": 40, "d": 2, "m": 0}
+        sam = {"n": "Sam", "s": downloads_gb * GB, "a": downloads_gb * GB, "f": 40, "d": 3, "m": 0, "c": [downloads]}
+        users = {"n": "Users", "s": downloads_gb * GB, "a": downloads_gb * GB, "f": 40, "d": 4, "m": 0, "c": [sam]}
+        games = {"n": "Games", "s": 200 * GB, "a": 200 * GB, "f": 900, "d": 50, "m": 0}
+        total = 200 * GB + downloads_gb * GB
+        return {"root": "C:\\", "tree": {"n": "C:\\", "s": total, "a": total, "f": 940, "d": 60, "m": 0, "c": [games, users]},
+                "largest": [{"p": "C:\\Games\\Big\\data.pak", "s": 40 * GB, "m": 0}],
+                "by_type": {"game data": {"s": 150 * GB, "f": 300}, "video": {"s": 20 * GB, "f": 12}}, "inaccessible": 0}
+
+    agent.post("/api/v1/agent/reports/scan:C", json=scan(10))
+    agent.post("/api/v1/agent/reports/scan:C", json=scan(22))
+    sign_in_ui(page, secret)
+    page.locator(".device-card").click()
+    page.get_by_role("tab", name="Files").click()
+
+    drives = page.get_by_test_id("drives")
+    expect(drives).to_contain_text("40 GB free of 500 GB")
+    expect(drives).to_contain_text("SANDISK")
+    expect(page.get_by_text("Sam's iPhone")).to_be_visible()
+    folders = page.get_by_test_id("folders")
+    expect(folders).to_contain_text("Games")
+    expect(folders).to_contain_text("200 GB")
+    expect(page.get_by_test_id("changes")).to_contain_text("C:\\Users\\Sam\\Downloads")
+    expect(page.get_by_test_id("changes")).to_contain_text("+12 GB")
+    expect(page.get_by_test_id("largest")).to_contain_text("data.pak")
+    expect(page.get_by_test_id("by-type")).to_contain_text("Game data")
+    shot(page, "60-files")
+
+    # Drill down, then ask the PC what's in the folder right now.
+    folders.get_by_role("button", name=re.compile("^Users")).click()
+    folders.get_by_role("button", name=re.compile("^Sam")).click()
+    expect(page.get_by_role("navigation", name="Folder")).to_contain_text("Users \\ Sam")
+    page.get_by_role("button", name="Show what's in this folder now").click()
+    cmd = None
+    deadline = time.time() + 5
+    while cmd is None:
+        assert time.time() < deadline
+        cmds = [c for c in agent.get("/api/v1/agent/state").json()["commands"] if c["kind"] == "list_folder"]
+        cmd = cmds[0] if cmds else None
+        time.sleep(0.2)
+    assert cmd["payload"]["path"] == "C:\\Users\\Sam"
+    agent.post(f"/api/v1/agent/commands/{cmd['id']}/result", json={"status": "done", "result": {
+        "path": "C:\\Users\\Sam", "total": 2, "truncated": False,
+        "entries": [{"n": "Downloads", "dir": True, "m": "2026-01-12T20:00:00Z", "h": False, "l": False},
+                    {"n": "notes.txt", "dir": False, "s": 2048, "m": "2026-01-12T20:00:00Z", "h": False, "l": False}]}})
+    listing = page.get_by_test_id("folder-listing")
+    expect(listing).to_contain_text("notes.txt")
+    expect(listing).to_contain_text("2 KB")
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_fits_screen(page)
+    shot(page, "61-files-phone")

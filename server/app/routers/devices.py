@@ -82,6 +82,7 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         silent_alert_minutes=s.silent_alert_minutes,
         show_window_titles=s.show_window_titles,
         auto_update=s.auto_update,
+        scan_every_days=s.scan_every_days,
         updated_at=s.updated_at,
     )
 

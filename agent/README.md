@@ -170,6 +170,10 @@ a short schedule window, or an immediate lock, set from the dashboard.
 19. **Usage:** use a couple of apps for a few minutes each, leave the PC idle for 5 minutes, then
     check the Usage tab (it updates every 5 minutes): the apps appear, and the idle time isn't
     counted.
+20. **Files:** on the Files tab, click **Scan for folder sizes** on C:. Task Manager shows a
+    low-priority PowerShell process for a few minutes; games stay smooth. When it's done, folder
+    sizes appear; click into Users and use **Show what's in this folder now**. Plug in a USB stick:
+    it appears in the drive list.
 
 ## Tests
 
@@ -179,6 +183,8 @@ a short schedule window, or an immediate lock, set from the dashboard.
 .\tests\Apps.Tests.ps1      # running apps: which processes may be closed, the process report
 .\tests\Update.Tests.ps1    # auto-update: fingerprints, install, rollback
 .\tests\Monitor.Tests.ps1   # change monitoring: installs, first runs, archives, accounts, USB, VPNs
+.\tests\Files.Tests.ps1     # drives, folder listing, when scans are due
+.\tests\Scanner.Tests.ps1   # the folder-size scanner and Scan.ps1
 ```
 
 Both run on Windows PowerShell 5.1 and on PowerShell 7 (Windows CI runs both).

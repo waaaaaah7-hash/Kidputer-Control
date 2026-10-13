@@ -249,3 +249,20 @@ button.bar-row:hover, .bar-row.active { background: var(--surface-2); }
 .bar-fill { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
 .bar-value { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); font-size: 0.9rem; }
 .seen-apps { max-height: 14rem; overflow-y: auto; }
+.drives { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.drive { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.drive.selected { border-color: var(--primary); }
+.drive .bar-track { display: block; }
+.bar-fill.danger { background: var(--danger); }
+.bar-fill.muted-fill { background: var(--muted); opacity: 0.5; }
+button.bar-row:disabled { cursor: default; opacity: 1; }
+button.bar-row:disabled:hover { background: none; }
+.link-button { font: inherit; background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; text-decoration: underline; }
+.nowrap { white-space: nowrap; }
+.live-folder { margin-top: 0.75rem; }
+.folders .bar-label { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) {
+  .tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 0; }
+  .tab { padding: 0.45rem 0.6rem; }
+}
+.drive .btn { padding: 0.3rem 0.55rem; }

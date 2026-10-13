@@ -32,6 +32,7 @@ App and process management is planned for a future version. That is why the prod
 | 3. SYSTEM watchdog + launching the UI into the child's session | **Done** (`agent/KidputerControl/Watchdog.ps1`, `UiAgent.ps1`, `Install.ps1`). See the verification note below. |
 | 4. Web dashboard | **Done** (`web/`: React + TypeScript + Vite, served by FastAPI). Deploys to Render: see `docs/DEPLOY-RENDER.md`. |
 | 1.1: modes, notifications, running apps, auto-update | **Done**. See the sections below. |
+| 1.2: change monitoring, app rules and usage, files | **Done**. See the sections below. |
 
 **Verification:**
 - The API has full test coverage against Postgres.
@@ -150,6 +151,7 @@ A 4–10 digit PIN is brute-forceable by anyone who can read the hash. So:
 | parent invites | `admin_invites` | One-time sign-up links: token hash, expiry, accepted or cancelled time. |
 | notifications | `notification_settings`, `push_subscriptions`, `notifications`, `app_secrets` | Each parent's levels, quiet hours and digest time; their phones and browsers; the send queue (kept 30 days); the Web Push key. |
 | commands and reports | `device_commands`, `device_reports` | Parent-to-PC commands with their results; the latest bulk report per kind. |
+| app rules and usage | `custom_apps`, `app_rules`, `usage_daily` | The parents' own apps; per-PC rules per app or category; seconds per app per local day (`_total` = all screen time). |
 | — | `devices.mode`, `.silent_since`, `.last_silence_started`, `.live_until`; `device_settings.silent_alert_minutes`, `.show_window_titles`, `.auto_update` | Modes, "PC went silent", live mode, and per-PC options. |
 
 Migrations live in `server/migrations` (Alembic). CI runs `alembic check` to catch drift between
@@ -297,6 +299,29 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
   Days are the PC's time zone, from the snapshot's `day_starts`. The `_total` key is all screen
   time. Usage comes from the child's own session, so a determined child could under-report it;
   it's for insight, not enforcement.
+
+## Drives, folder sizes and the file explorer (#19)
+
+- **Drives** (`POST /reports/drives`): every ready drive with size and free space, and phones or
+  cameras connected by USB (by name). Sent when the list changes, at least every 10 minutes (every
+  minute while live).
+- **Scans:** `KidputerControl.Scanner.cs`, run by `Scan.ps1` in a separate process in Windows'
+  background mode (lowest CPU and disk priority). It walks the drive with `FindFirstFileEx`
+  (basic info, large fetch, `\\?\` long paths), never follows junctions or symlinks, counts
+  OneDrive online-only files as size but not size on disk, and writes its own JSON: a folder tree
+  (name, size, size on disk, files, folders, newest date, unreadable flag) where folders below the
+  top two levels that are under 0.2% of the used space (at least 50 MB) are folded into their
+  parent, the 100 largest files, and space by type. Off Windows it lists folders with .NET, which
+  is what the tests use.
+- **When:** on a parent's request (`scan_drive` command), and every `scan_every_days` (default 7)
+  for fixed drives, preferably while the child isn't signed in or the PC is locked. One at a time;
+  stopped after 2 hours. Progress shows in the heartbeat (`scan`).
+- **Server:** `POST /reports/scan:C` keeps the previous scan as `scan_prev:C`. "What changed"
+  compares the two trees: folders that grew by 50 MB or more, or appeared, leaving out a folder
+  when 75%+ of its growth is explained by a listed folder inside it.
+- **Live listing:** a `list_folder` command returns one folder's entries (name, folder or file,
+  size, modified, hidden, link), at most 3,000, for a full local path only.
+- **Never:** reading, previewing or downloading a file's contents. This is deliberate.
 
 ## Change monitoring (#17)
 

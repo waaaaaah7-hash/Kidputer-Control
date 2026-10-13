@@ -30,6 +30,10 @@ or on their phone, and everything that happens is recorded in one central activi
   still recognised. Add your own apps, picked from the ones your child has used.
 - **Usage time:** time per app and per category each day, counting only the app in front and not
   idle time.
+- **Files:** every drive with its free space, connected phones, and folder sizes like TreeSize:
+  click through folders sorted by size, the largest files, space by type, and what grew since the
+  last scan. Ask the PC what's in a folder right now. Names, sizes and dates only: files can't be
+  opened or downloaded. Drives are scanned weekly in the background, or when you ask.
 - **Change monitoring:** parents hear about apps installed or removed, programs run for the first
   time (for example a game straight from a zip), new zip files, USB drives, new Windows accounts or
   administrators, Defender being switched off, and VPN or remote-control apps.
@@ -69,6 +73,12 @@ or on their phone, and everything that happens is recorded in one central activi
 | Running apps | Notification settings |
 |---|---|
 | ![Apps tab](docs/screenshots/apps.png) | ![Notification settings](docs/screenshots/notifications.png) |
+| **App rules** | **Usage** |
+| ![App rules tab](docs/screenshots/app-rules.png) | ![Usage tab](docs/screenshots/usage.png) |
+
+Files: drives, folder sizes, what changed, and the largest files:
+
+![Files tab](docs/screenshots/files.png)
 
 The Parents section of the Account page:
 
@@ -141,23 +151,25 @@ For dashboard development with hot reload, run `cd web && npm install && npm run
 
 | Suite | What it covers |
 |---|---|
-| `server/tests` (pytest, real Postgres) | API, auth and 2FA, passkeys (with a software authenticator), remembered devices, parent invites and removal, modes, notifications (grouping, quiet hours, digests, encrypted push, "PC went silent"), running apps and commands, auto-update, lockouts, the agent protocol, UTC lock windows, serving the dashboard |
-| `server/tests/test_agent_integration.py` | The agent's PowerShell code against a live API (enroll, sync, events, PIN unlock, commands and reports, downloading and installing an update) |
-| `server/tests/test_dashboard_e2e.py` | The whole parent journey in Chromium: passkeys with a virtual authenticator, inviting and removing a second parent, notification settings, running apps and closing one, and phone-width layout checks |
-| `web` (Vitest) | Status, time, schedule and app-grouping helpers |
-| `agent/tests` | Decision logic, countdown, PIN lockout, queue, inbox, tamper check, install modes, app rules for closing, auto-update (fingerprints, install, rollback), script parsing, interop compile |
+| `server/tests` (pytest, real Postgres) | API, auth and 2FA, passkeys (with a software authenticator), remembered devices, parent invites and removal, modes, notifications (grouping, quiet hours, digests, encrypted push, "PC went silent"), running apps and commands, auto-update, app rules and custom apps, usage, drives and scans ("what changed"), lockouts, the agent protocol, UTC windows across daylight saving, serving the dashboard |
+| `server/tests/test_agent_integration.py` | The agent's PowerShell code against a live API (enroll, sync, events, PIN unlock, commands and reports, downloading and installing an update, a real folder-size scan uploaded) |
+| `server/tests/test_dashboard_e2e.py` | The whole parent journey in Chromium: passkeys with a virtual authenticator, inviting and removing a second parent, notification settings, running apps and closing one, app rules and custom apps, usage, the Files tab, and phone-width layout checks |
+| `web` (Vitest) | Status, time, schedule, app-grouping, rule-description, duration and size helpers |
+| `agent/tests` | Decision logic, countdown, PIN lockout, queue, inbox, tamper check, install modes, closing apps, app matching and rules, usage counting, change monitoring, the folder-size scanner, folder listing, auto-update (fingerprints, install, rollback), script parsing, interop compile |
 
 CI runs all of these. The agent tests run on Windows under both PowerShell 5.1 and 7.
 
 ## Status
 
-Version 1.1.0. Everything planned for 1.0 and 1.1 is built: the cloud API, the agent, the SYSTEM
-watchdog, the dashboard, modes, notifications, running apps, and automatic updates.
+Version 1.2.0. Everything planned for 1.0, 1.1 and 1.2 is built: the cloud API, the agent, the
+SYSTEM watchdog, the dashboard, modes, notifications, running apps, automatic updates, change
+monitoring, app schedules and usage, and the Files tab.
 
 **Not yet verified on a real PC:** the parts that need an interactive Windows session. These are
 the lock-screen windows, launching into the child's session, the scheduled task, the folder
-permissions, closing apps, the shutdown signal, and installing an update. Before relying on the
-agent, run through the checklist in `agent/README.md` once.
+permissions, closing apps, the shutdown signal, installing an update, change monitoring, app
+rules, usage sampling, and drive scans. Before relying on the agent, run through the checklist in
+`agent/README.md` once.
 
 ## Roadmap
 
@@ -168,11 +180,25 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 |---|---|
 | **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download (done). |
 | **1.1 (done)** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. Sign in with passkeys and remember trusted devices. Several parents with their own sign-ins. |
-| **1.2** | Notifications for major changes: app installs, programs run for the first time, archives, new accounts, Defender, USB drives. A file explorer for the PC's drives with folder-size analysis, like TreeSize. Schedule when common apps are available. Add custom apps. Per-app usage time. |
+| **1.2 (done)** | Notifications for major changes: app installs, programs run for the first time, archives, new accounts, Defender, USB drives. A file explorer for the PC's drives with folder-size analysis, like TreeSize. Schedule when common apps are available. Add custom apps. Per-app usage time. |
 | **1.3** | Install requests that a parent approves (Managed mode). Daily screen-time quotas, an "ask for more time" button, schedule templates and holidays. |
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **Version 1.2.0:**
+  - **Change monitoring:** alerts for apps installed or removed, programs run for the first time
+    (for example straight from a zip), new zip files, USB drives, new Windows accounts or
+    administrators, Defender switched off, and VPN or remote-control apps. The first two days only
+    learn what's normal.
+  - **App rules** tab: allow, block, or schedule apps and whole categories per weekday; the PC
+    closes an app opened outside its times and says when it's available. Add your own apps,
+    picked from the ones your child has used.
+  - **Usage** tab: screen time per day, by category and by app (only the app in front, not idle
+    time), and the last 7 days.
+  - **Files** tab: drives, folder sizes like TreeSize, largest files, space by type, what grew
+    since the last scan, and a live look into any folder. Names, sizes and dates only.
+  - On phones, the device page's tabs wrap onto two lines.
 
 - **Version 1.1.0:**
   - **Managed and Trusted modes:** choose in the installer dialog or on the device page; no

@@ -25,6 +25,7 @@ Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Common.psm1') -Fo
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Apps.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Update.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Monitor.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Files.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $DataRoot
 
 # --- Single instance ------------------------------------------------------------------------------------
@@ -297,6 +298,19 @@ function Invoke-SyncStep {
                 $reports.ProcessesAt = $now
                 [void](Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'processes' -Data (Get-ProcessReport))
             }
+            $drivesEvery = 600
+            if (Test-Live) { $drivesEvery = 60 }
+            $driveReport = $null
+            if (($now - $files.DrivesAt).TotalSeconds -ge 30) {
+                $driveReport = Get-KcDriveReport
+                $key = (@($driveReport.drives | ForEach-Object { $_.name }) + @($driveReport.devices)) -join '|'
+                if ($key -ne $files.DrivesKey -or ($now - $files.DrivesAt).TotalSeconds -ge $drivesEvery) {
+                    if (Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'drives' -Data $driveReport) {
+                        $files.DrivesKey = $key
+                        $files.DrivesAt = $now
+                    }
+                }
+            }
             $usageEvery = 300
             if (Test-Live) { $usageEvery = 30 }
             if ($appRun.UsageDirty -and ($now - $appRun.UsageSentAt).TotalSeconds -ge $usageEvery) {
@@ -330,6 +344,7 @@ function Get-Status {
         pin_locked_until      = $local.pin_locked_until
         child_is_admin        = $adminCheck.IsAdmin
         agent_bundle          = $update.Bundle
+        scan                  = (Get-ScanStatus)
     }
     if ($d -and $d.UnlockAt) { $s.unlock_at = ConvertTo-KcIso $d.UnlockAt }
     if ($d -and $d.OverrideEndsAt) { $s.override_ends_at = ConvertTo-KcIso $d.OverrideEndsAt }
@@ -404,6 +419,14 @@ function Invoke-Commands {
         if (@($appStops | Where-Object { $_.CommandId -and $_.CommandId -eq $id }).Count) { continue }
         switch ([string](Get-KcProp $cmd 'kind' '')) {
             'stop_app' { Start-AppStop -Command $cmd }
+            'list_folder' { Invoke-ListFolder -Command $cmd }
+            'scan_drive' {
+                $letter = ([string](Get-KcProp (Get-KcProp $cmd 'payload') 'drive' '')).ToUpperInvariant()
+                $err = $null
+                if ($letter -notmatch '^[A-Z]$') { $err = 'Not a drive letter.' } else { $err = Start-DriveScan -Letter $letter -CommandId $id }
+                if ($err) { Complete-Command -Id $id -Status 'failed' -Result @{ message = $err } }
+                else { $local.handled_commands = Add-KcBoundedItem -List $local.handled_commands -Item $id -Max 200; $script:localDirty = $true }
+            }
             default { Complete-Command -Id $id -Status 'failed' -Result @{ reason = 'unsupported'; message = 'This PC needs a newer version of Kidputer Control for that.' } }
         }
     }
@@ -525,6 +548,105 @@ function Add-UsageSample {
     if (($now - $appRun.UsageSavedAt).TotalSeconds -ge 60) {
         Write-KcJsonFile -Path $usageFile -Object $usage
         $appRun.UsageSavedAt = $now
+    }
+}
+
+# --- Drives, folder-size scans and the file explorer (roadmap #19) -----------------------------------------------------
+
+$scanDir = Join-Path $paths.Config 'scans'
+$files = @{ DrivesAt = [DateTimeOffset]::MinValue; DrivesKey = ''; Scan = $null; CheckAt = [DateTimeOffset]::MinValue }
+$lastScansFile = Join-Path $scanDir 'last.json'
+$lastScans = @{}
+try { $ls = Read-KcJsonFile -Path $lastScansFile; if ($ls) { foreach ($p in $ls.PSObject.Properties) { $lastScans[$p.Name] = [string]$p.Value } } } catch { }
+
+function Start-DriveScan {
+    <# Start a folder-size scan of one drive in a separate, background-priority process. #>
+    param([string]$Letter, [string]$CommandId)
+    if ($files.Scan) { return "A scan of drive $($files.Scan.Letter): is already running." }
+    $drive = $null
+    try { $drive = [IO.DriveInfo]::new("${Letter}:\") } catch { }
+    if ($null -eq $drive -or -not $drive.IsReady) { return "Drive ${Letter}: isn't available on the PC." }
+    [void][IO.Directory]::CreateDirectory($scanDir)
+    $out = Join-Path $scanDir "$Letter.json"
+    $progress = Join-Path $scanDir "$Letter.progress.json"
+    foreach ($f in $out, $progress) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    $min = Get-KcScanMinBytes -UsedBytes ([long]$drive.TotalSize - [long]$drive.AvailableFreeSpace)
+    # No quotes round C:\ : a quote right after a backslash would be taken as a literal quote by Windows.
+    $scanArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -Root {1}:\ -OutFile "{2}" -ProgressFile "{3}" -MinNodeBytes {4}' -f (Join-Path $InstallRoot 'Scan.ps1'), $Letter, $out, $progress, $min
+    $proc = Start-Process -FilePath $powershellExe -ArgumentList $scanArgs -WindowStyle Hidden -PassThru
+    $files.Scan = @{ Letter = $Letter; Proc = $proc; Out = $out; Progress = $progress; StartedAt = (Get-KcNow); CommandId = $CommandId; Uploaded = $false }
+    Add-KcEvent -Type 'files.scan_started' -Message "Scanning drive ${Letter}: for folder sizes"
+    $null
+}
+
+function Update-DriveScan {
+    $s = $files.Scan
+    $now = Get-KcNow
+    if ($null -eq $s) {
+        # Regular scans: when due, and preferably while the child isn't using the PC (or it's locked).
+        if ($now -lt $files.CheckAt) { return }
+        $files.CheckAt = $now.AddMinutes(10)
+        $every = [int](Get-KcProp $state 'scan_every_days' 7)
+        $due = Get-KcDueScan -Drives @((Get-KcDriveReport).drives) -LastScans $lastScans -EveryDays $every -Now $now
+        if (-not $due) { return }
+        $quiet = (-not $script:consoleIsChild) -or ($script:currentMode.Mode -eq 'locked')
+        $last = $null
+        if ($lastScans.ContainsKey($due)) { $last = ConvertTo-KcDate $lastScans[$due] }
+        $veryOverdue = ($null -eq $last) -or (($now - $last).TotalDays -ge 2 * $every)
+        if ($quiet -or $veryOverdue) { [void](Start-DriveScan -Letter $due -CommandId $null) }
+        return
+    }
+    if (-not $s.Proc.HasExited) {
+        if (($now - $s.StartedAt).TotalHours -ge 2) {
+            try { $s.Proc.Kill() } catch { }
+            Add-KcEvent -Type 'files.scan_failed' -Severity warning -Message "Scan of drive $($s.Letter): took over 2 hours and was stopped"
+            if ($s.CommandId) { Complete-Command -Id $s.CommandId -Status 'failed' -Result @{ message = 'The scan took over 2 hours and was stopped.' } }
+            $files.Scan = $null
+        }
+        return
+    }
+    if (-not [IO.File]::Exists($s.Out)) {
+        Add-KcEvent -Type 'files.scan_failed' -Severity warning -Message "Scan of drive $($s.Letter): failed"
+        if ($s.CommandId) { Complete-Command -Id $s.CommandId -Status 'failed' -Result @{ message = 'The scan failed on the PC.' } }
+        $files.Scan = $null
+        return
+    }
+    if (-not $token -or -not $apiUrl) { return }
+    # Upload the result (retried every tick until the server has it).
+    try {
+        $body = [IO.File]::ReadAllText($s.Out, (New-Object System.Text.UTF8Encoding($false)))
+        $r = Invoke-KcApi -BaseUrl $apiUrl -Method POST -Path "/api/v1/agent/reports/scan:$($s.Letter)" -Token $token -Body $body
+        if ($r.Status -ne 204) { return }
+    } catch { return }
+    $lastScans[$s.Letter] = ConvertTo-KcIso $now
+    Write-KcJsonFile -Path $lastScansFile -Object $lastScans
+    $mins = [Math]::Max(1, [int]($now - $s.StartedAt).TotalMinutes)
+    Add-KcEvent -Type 'files.scanned' -Message "Drive $($s.Letter): scanned in $mins min"
+    if ($s.CommandId) { Complete-Command -Id $s.CommandId -Status 'done' -Result @{ minutes = $mins } }
+    foreach ($f in $s.Out, $s.Progress) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    $files.Scan = $null
+}
+
+function Get-ScanStatus {
+    $s = $files.Scan
+    if ($null -eq $s) { return $null }
+    $count = 0
+    try { $p = Read-KcJsonFile -Path $s.Progress; if ($p) { $count = [long]$p.files } } catch { }
+    @{ drive = $s.Letter; files = $count; started_at = (ConvertTo-KcIso $s.StartedAt) }
+}
+
+function Invoke-ListFolder {
+    param($Command)
+    $path = [string](Get-KcProp (Get-KcProp $Command 'payload') 'path' '')
+    if (-not (Test-KcFolderPath $path)) {
+        Complete-Command -Id $Command.id -Status 'failed' -Result @{ message = 'Not a folder path on this PC.' }
+        return
+    }
+    try {
+        $listing = Get-KcFolderListing -Path $path
+        Complete-Command -Id $Command.id -Status 'done' -Result $listing
+    } catch {
+        Complete-Command -Id $Command.id -Status 'failed' -Result @{ message = $_.Exception.Message }
     }
 }
 
@@ -848,6 +970,7 @@ while ($true) {
         Invoke-Commands
         Invoke-AppRules
         Update-AppStops
+        Update-DriveScan
         Invoke-SyncStep
         Invoke-TamperCheck
         Update-ChildAdminStatus

@@ -5,6 +5,7 @@ import InstallPanel, { ModeChoice } from "../InstallPanel";
 import AppsTab from "../device/AppsTab";
 import RulesTab from "../device/RulesTab";
 import UsageTab from "../device/UsageTab";
+import FilesTab from "../device/FilesTab";
 import { UserCancelled } from "../cancel";
 import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
@@ -34,6 +35,7 @@ const TABS = [
   { id: "apps", label: "Apps" },
   { id: "rules", label: "App rules" },
   { id: "usage", label: "Usage" },
+  { id: "files", label: "Files" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -82,6 +84,7 @@ export default function DeviceDetail() {
       {tab === "apps" && <AppsTab device={device} />}
       {tab === "rules" && <RulesTab device={device} />}
       {tab === "usage" && <UsageTab device={device} />}
+      {tab === "files" && <FilesTab device={device} />}
       {tab === "overview" && (
         <div className="columns">
           <div className="stack">
@@ -429,6 +432,10 @@ function SettingsPanel({ device, onChange }: { device: Device; onChange: () => P
           <label>
             Alert me if the PC goes silent for (minutes, 0 = never)
             <input type="number" min={0} max={1440} {...num("silent_alert_minutes")} />
+          </label>
+          <label>
+            Scan drives for folder sizes every (days, 0 = only when asked)
+            <input type="number" min={0} max={90} {...num("scan_every_days")} />
           </label>
           <label>
             Check for changes every (seconds)

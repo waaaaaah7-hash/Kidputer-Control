@@ -162,6 +162,10 @@ const EVENT_LABELS: Record<string, string> = {
   "config.app_rules_changed": "App rules changed",
   "apps.custom_added": "App added",
   "apps.custom_removed": "App removed from the list",
+  "files.scan_requested": "Drive scan requested",
+  "files.scan_started": "Drive scan started",
+  "files.scanned": "Drive scanned",
+  "files.scan_failed": "Drive scan failed",
   "software.installed": "App installed",
   "software.uninstalled": "App removed",
   "software.vpn_detected": "VPN or remote-control app",
@@ -251,3 +255,16 @@ export function authMethodLabel(method: string | null | undefined): string {
   return (method && AUTH_METHODS[method]) || "Signed in";
 }
 
+
+/** "1.2 GB", "340 MB", "12 KB" (1024-based, as Windows shows sizes). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} bytes`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")} ${units[i]}`;
+}

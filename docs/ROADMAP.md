@@ -1,6 +1,6 @@
 # Kidputer Control — Roadmap
 
-This is the plan after version 1.0.0. Version 1.1.0 is built (everything in the 1.1 row below). It includes the features already on record (app and process
+This is the plan after version 1.0.0. Versions 1.1.0 and 1.2.0 are built (everything in the 1.1 and 1.2 rows below). It includes the features already on record (app and process
 management, usage quotas, weekly reports, bonus time), the Managed and Trusted modes with change
 notifications, and further suggestions. Each one is rated for effort, feasibility, and
 practicality.
@@ -33,7 +33,7 @@ practicality.
 | 16 | Managed and Trusted modes, chosen in the installer **(done)** | Requested | S | High | High |
 | 17 | Change monitoring: installs, first-run programs, archives, accounts, and more **(done)** | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
-| 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
+| 19 | Drives, file explorer, and folder-size analysis (like TreeSize) **(done)** | Requested | L | High | High |
 | 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
 | 21 | Remember this device, with a signed-in devices page and re-checks for risky actions **(done)** | Requested | S | High | High |
 | 22 | Several parents: invite by link, remove, and names in the activity log **(done)** | Requested | S | High | High |
@@ -44,7 +44,7 @@ practicality.
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
 | **1.1 (done)** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
-| **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
+| **1.2 (done)** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
 | **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
@@ -316,7 +316,7 @@ silently, without a window:
 
 Every request and approval is recorded in the activity log.
 
-## 19. Drives, file explorer, and folder-size analysis — L
+## 19. Drives, file explorer, and folder-size analysis — L — done
 
 A **Files** tab on the device page. It shows **names, sizes, and dates only**: opening, previewing,
 or downloading files is deliberately out of scope, for privacy, and because it would turn the
