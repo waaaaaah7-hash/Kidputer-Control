@@ -88,6 +88,13 @@ The Parents section of the Account page:
 
 ![Parents section of the Account page](docs/screenshots/parents.png)
 
+## Video guides
+
+Eight short narrated videos cover the tour, setting up on Render, installing on the child's PC,
+everyday use from a phone, the 1.2 features, parents and security, the real-PC checklist, and an
+overview for developers. They're recorded from the real dashboard and can be re-recorded after the
+design changes: see [docs/VIDEOS.md](docs/VIDEOS.md).
+
 ## How it fits together
 
 ```
