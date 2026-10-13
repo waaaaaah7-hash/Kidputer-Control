@@ -294,7 +294,7 @@ class Message(Base):
     __table_args__ = (
         CheckConstraint("mode IN ('persistent', 'closable')", name="ck_messages_mode"),
         CheckConstraint("char_length(body) BETWEEN 1 AND 2000", name="ck_messages_body"),
-        # At most one live message per device, (a new message replaces the current one).
+        # At most one live message per device: a new message replaces the current one.
         Index(
             "uq_messages_one_active",
             "device_id",
