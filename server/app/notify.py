@@ -54,7 +54,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("vpn", "VPN and remote-access apps", "A VPN or remote-control app (NordVPN, AnyDesk, TeamViewer, ...) appeared.", "immediate", "VPN or remote-access apps"),
     Category("accounts", "Windows accounts", "A Windows account was created or deleted, or someone became an administrator.", "immediate", "account changes"),
     Category("defender", "Windows Defender", "Virus protection was switched off or back on.", "immediate", "Defender changes"),
-    Category("blocked_apps", "Blocked apps", "Your child tried to open an app outside its allowed times.", "digest", "blocked apps", ready=False),
+    Category("blocked_apps", "Blocked apps", "Your child tried to open an app outside its allowed times.", "digest", "blocked apps"),
     Category("limits", "Daily limits", "A daily screen-time or app limit ran out.", "digest", "limits reached", ready=False),
     Category("archives", "Zip and archive files", "New zip, rar or 7z files, or archives being opened.", "digest", "archive files"),
     Category("usb", "USB drives", "A USB stick or external drive was connected.", "digest", "USB drives"),

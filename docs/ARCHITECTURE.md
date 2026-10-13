@@ -275,6 +275,29 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
   wasn't: a critical `device.agent_was_stopped`. A watchdog that was only asleep reports
   `pc.resumed` instead, which clears it.
 
+## App rules (#3, #4) and usage time (#5)
+
+- **Catalogue** (`server/app/catalog.py`): common apps in four categories, each with matchers. A
+  matcher's fields must all match: `exe` (the file name *or* the original file name stored in the
+  program, so renamed copies still match), and text in the `product`, `company`, `path` or
+  `cmdline` (Minecraft Java runs on a generic `javaw.exe`). Parents' own apps (`custom_apps`) use
+  the same shape, are shared by every PC, and are checked first.
+- **Rules** (`app_rules`): per PC, per app or category: `allow`, `block`, or `schedule` with
+  weekly windows in the PC's time zone. The snapshot carries the catalogue and the rules (an app's
+  own rule first, so it beats its category's), with allowed times expanded into UTC instants for
+  14 days, like bedtime. Offline for longer, the agent falls back to the weekly times.
+- **Enforcement** (watchdog, every second): processes in the child's session are matched; one
+  outside its allowed time that has just started is closed at once, with a notice on screen
+  saying when it's available (`app.blocked`, at most every 10 minutes per app). One that was
+  allowed when it started gets the same countdown as a parent's Close (`app.time_up`).
+- **Usage:** the UI agent samples the foreground window every 5 seconds, skipping idle time
+  (2 minutes without input) and the lock screen, and sends a minute's totals through the inbox.
+  The watchdog caps and attributes them to apps, keeps per-day running totals in
+  `config\usage.json`, and reports them (`POST /reports/usage`, every 5 minutes, 30 s while live).
+  Days are the PC's time zone, from the snapshot's `day_starts`. The `_total` key is all screen
+  time. Usage comes from the child's own session, so a determined child could under-report it;
+  it's for insight, not enforcement.
+
 ## Change monitoring (#17)
 
 `KidputerControl.Monitor.psm1`, run from the watchdog, each check on its own timer. What it

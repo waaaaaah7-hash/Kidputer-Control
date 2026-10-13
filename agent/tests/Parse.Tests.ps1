@@ -30,4 +30,12 @@ Test 'native interop compiles' {
     Assert-Equal ([uint32]4294967295) ([KcNative]::NoSession)
 }
 
+Test 'UI agent interop compiles' {
+    $src = [IO.File]::ReadAllText((Join-Path $agentRoot 'KidputerControl/UiAgent.ps1'))
+    $m = [regex]::Match($src, "(?s)Add-Type -Namespace KcUi -Name User32 -MemberDefinition @'\r?\n(.*?)\r?\n'@")
+    Assert-True $m.Success 'found the KcUi definition'
+    if (-not ('KcUiParseTest.User32' -as [type])) { Add-Type -Namespace KcUiParseTest -Name User32 -MemberDefinition $m.Groups[1].Value }
+    Assert-True ([bool]('KcUiParseTest.User32' -as [type])) 'compiled'
+}
+
 Complete-Tests

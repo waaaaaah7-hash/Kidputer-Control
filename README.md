@@ -24,6 +24,12 @@ or on their phone, and everything that happens is recorded in one central activi
   and repeats are grouped into one alert.
 - **"PC went silent" alerts:** if a PC stops checking in, parents are told. When it's back, the
   alert says whether the PC was simply off or Kidputer Control was stopped while Windows ran.
+- **App schedules:** choose when apps or whole categories (games, browsers, chat, video) may be
+  used, per weekday, or block them. Outside the allowed times an app closes as soon as it opens,
+  and the child sees when it's available; an app already open gets a countdown. Renamed copies are
+  still recognised. Add your own apps, picked from the ones your child has used.
+- **Usage time:** time per app and per category each day, counting only the app in front and not
+  idle time.
 - **Change monitoring:** parents hear about apps installed or removed, programs run for the first
   time (for example a game straight from a zip), new zip files, USB drives, new Windows accounts or
   administrators, Defender being switched off, and VPN or remote-control apps.

@@ -1,6 +1,8 @@
 // Typed client for the Kidputer Control API. Types mirror server/app/schemas.py.
 // The dashboard is served from the same origin as the API, so the session cookie is sent automatically.
 
+import type { AppRule, AppRuleIn } from "./rules";
+
 export interface Admin {
   id: string;
   email: string;
@@ -97,6 +99,36 @@ export interface DeviceCommand {
   result: Record<string, unknown> | null;
   created_at: string;
   completed_at: string | null;
+}
+
+export interface CatalogApp {
+  id: string;
+  name: string;
+  category: string;
+  custom: boolean;
+  matchers: Record<string, string>[];
+}
+
+export interface AppCatalog {
+  categories: Record<string, string>;
+  apps: CatalogApp[];
+}
+
+export interface UsageDay {
+  day: string;
+  total_seconds: number;
+  apps: { key: string; name: string; category: string | null; seconds: number }[];
+}
+
+export interface SeenApp {
+  key: string;
+  name: string;
+  path: string | null;
+  exe: string | null;
+  product: string | null;
+  company: string | null;
+  catalog_id: string | null;
+  last_seen: string | null;
 }
 
 export interface InviteInfo {
@@ -431,6 +463,15 @@ export const api = {
     request<DeviceCommand[]>("GET", `/devices/${encodeURIComponent(id)}/commands${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
   command: (id: string, commandId: string) =>
     request<DeviceCommand>("GET", `/devices/${encodeURIComponent(id)}/commands/${encodeURIComponent(commandId)}`),
+
+  appCatalog: () => request<AppCatalog>("GET", "/apps/catalog"),
+  addCustomApp: (body: { name: string; category: string; exe?: string; product?: string; path?: string }) =>
+    request<CatalogApp>("POST", "/apps/custom", body),
+  removeCustomApp: (id: string) => request<void>("DELETE", `/apps/custom/${encodeURIComponent(id.replace(/^custom:/, ""))}`),
+  appRules: (id: string) => request<AppRule[]>("GET", `/devices/${encodeURIComponent(id)}/app-rules`),
+  putAppRules: (id: string, rules: AppRuleIn[]) => request<AppRule[]>("PUT", `/devices/${encodeURIComponent(id)}/app-rules`, { rules }),
+  usage: (id: string, days = 7) => request<UsageDay[]>("GET", `/devices/${encodeURIComponent(id)}/usage?days=${days}`),
+  seenApps: (id: string) => request<SeenApp[]>("GET", `/devices/${encodeURIComponent(id)}/apps/seen`),
 
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),

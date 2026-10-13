@@ -162,6 +162,14 @@ a short schedule window, or an immediate lock, set from the dashboard.
     - Plug in a USB stick: "USB drive connected", with a count of programs and archives on it.
     - Create a Windows account, or make one an administrator: an account alert within 2 minutes.
     - Turn off Defender's real-time protection: "Virus protection switched off" within 5 minutes.
+18. **App rules:** on the App rules tab, block Notepad++ or another non-Windows app (add it under
+    "An app that isn't listed..."). Opening it closes it within about a second, and a box says
+    it isn't allowed. Then give a category a schedule that ends in a couple of minutes, with one of
+    its apps open: when the time ends, a countdown appears before it closes. Rename a blocked
+    program's .exe: it's still recognised.
+19. **Usage:** use a couple of apps for a few minutes each, leave the PC idle for 5 minutes, then
+    check the Usage tab (it updates every 5 minutes): the apps appear, and the idle time isn't
+    counted.
 
 ## Tests
 

@@ -17,9 +17,9 @@ practicality.
 | 0 | Verify 1.0 on a real Windows PC | Prerequisite | S (parent's time + fixes) | High | Essential |
 | 1 | See running apps and processes **(done)** | Requested | M | High | High |
 | 2 | Stop a running app remotely **(done)** | Requested | M | High | High |
-| 3 | Schedule availability of common apps | Requested | L | High, with caveats | High |
-| 4 | Add custom apps | Requested | S (on top of #3) | High | High |
-| 5 | Per-app usage time | Suggested (feeds #6–7) | M | High | High |
+| 3 | Schedule availability of common apps **(done)** | Requested | L | High, with caveats | High |
+| 4 | Add custom apps **(done)** | Requested | S (on top of #3) | High | High |
+| 5 | Per-app usage time **(done)** | Suggested (feeds #6–7) | M | High | High |
 | 6 | Daily screen-time quotas | Original roadmap | M | High | High |
 | 7 | Weekly reports (email) | Original roadmap | M | High | Medium |
 | 8 | Bonus time (time bank) | Original roadmap | S | High | Low: extra time already covers most of it |
@@ -87,7 +87,7 @@ more on them.
   stopped from the dashboard.
 - Every stop is recorded in the activity log.
 
-## 3. Schedule availability of common apps — L
+## 3. Schedule availability of common apps — L — done
 
 **Rules**
 - Rules apply to an app or a category, per weekday.
@@ -128,14 +128,14 @@ PC):
 - A determined, technical teenager will find gaps. The aim is to stop casual use reliably, not
   every possible attempt.
 
-## 4. Add custom apps — S (once #3 exists)
+## 4. Add custom apps — S — done
 
 - **Main route:** pick from **"Apps seen on this PC"**, built from the process list in #1. The
   parent clicks "Add rule" next to something the child has been running; no file paths needed.
 - **Fallback:** enter an exe name or path by hand.
 - Custom apps can go into the parent's own categories, for example "Homework apps".
 
-## 5. Per-app usage time — M
+## 5. Per-app usage time — M — done
 
 - A natural by-product of #1 and #3. It's also the data that makes #6 and #7 worthwhile.
 - The UI agent runs in the child's session, so it can tell which app is in front and whether the

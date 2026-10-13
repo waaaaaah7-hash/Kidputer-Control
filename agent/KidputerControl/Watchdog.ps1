@@ -65,6 +65,21 @@ $reports = @{ ProcessesAt = [DateTimeOffset]::MinValue }
 $update = @{ LastAttempt = [DateTimeOffset]::MinValue; Bundle = $null }
 try { $update.Bundle = (Get-KcLocalBundle -Root $InstallRoot).Fingerprint } catch { Write-KcLog -Level warning -Message "Can't fingerprint the installed files: $($_.Exception.Message)" }
 $appStops = New-Object System.Collections.ArrayList   # apps being closed: warning shown, then closed
+$watchdogStartTicks = [DateTime]::UtcNow.Ticks
+$appRun = @{ Identity = @{}; Cmdline = @{}; State = @{}; BlockedEventAt = @{}; Notices = (New-Object System.Collections.ArrayList); LastUsageMsg = [DateTimeOffset]::MinValue; UsageSavedAt = [DateTimeOffset]::MinValue; UsageDirty = $false; UsageSentAt = [DateTimeOffset]::MinValue }
+$usageFile = Join-Path $paths.Config 'usage.json'
+$usage = @{}
+try {
+    $u = Read-KcJsonFile -Path $usageFile
+    if ($u) {
+        foreach ($d in $u.PSObject.Properties) {
+            $usage[$d.Name] = @{}
+            foreach ($k in $d.Value.PSObject.Properties) {
+                $usage[$d.Name][$k.Name] = @{ name = [string]$k.Value.name; category = [string](Get-KcProp $k.Value 'category' ''); seconds = [int]$k.Value.seconds; path = [string](Get-KcProp $k.Value 'path' '') }
+            }
+        }
+    }
+} catch { $usage = @{} }
 $script:childSession = $null
 $lastMode = $null
 $lastUiJson = $null
@@ -210,6 +225,7 @@ function Invoke-Inbox {
                     $handled = $true
                 }
             }
+            'usage' { Add-UsageSample -Request $req }
             'ui_error' {
                 $msg = [string](Get-KcProp $req 'message' '')
                 if ($msg.Length -gt 500) { $msg = $msg.Substring(0, 500) }
@@ -280,6 +296,14 @@ function Invoke-SyncStep {
             if (($now - $reports.ProcessesAt).TotalSeconds -ge $every) {
                 $reports.ProcessesAt = $now
                 [void](Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'processes' -Data (Get-ProcessReport))
+            }
+            $usageEvery = 300
+            if (Test-Live) { $usageEvery = 30 }
+            if ($appRun.UsageDirty -and ($now - $appRun.UsageSentAt).TotalSeconds -ge $usageEvery) {
+                if (Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'usage' -Data @{ days = $usage }) {
+                    $appRun.UsageSentAt = $now
+                    $appRun.UsageDirty = $false
+                }
             }
         }
         'heartbeat' {
@@ -367,7 +391,7 @@ function Update-AppStops {
         $forced = 0
         foreach ($t in $targets) { try { Stop-Process -Id $t.Id -Force -ErrorAction Stop; $forced++ } catch { } }
         Add-KcEvent -Type 'app.stopped' -Message "$($stop.Name) was closed" -Data @{ path = $stop.Path; forced = $forced }
-        Complete-Command -Id $stop.CommandId -Status 'done' -Result @{ closed = [Math]::Max([int]$stop.Count, $forced); forced = $forced }
+        if ($stop.CommandId) { Complete-Command -Id $stop.CommandId -Status 'done' -Result @{ closed = [Math]::Max([int]$stop.Count, $forced); forced = $forced } }
         $appStops.Remove($stop)
     }
 }
@@ -377,11 +401,130 @@ function Invoke-Commands {
     foreach ($cmd in @(Get-KcProp $state 'commands' @())) {
         $id = [string](Get-KcProp $cmd 'id' '')
         if (-not $id -or @($local.handled_commands) -contains $id) { continue }
-        if (@($appStops | Where-Object { $_.CommandId -eq $id }).Count) { continue }
+        if (@($appStops | Where-Object { $_.CommandId -and $_.CommandId -eq $id }).Count) { continue }
         switch ([string](Get-KcProp $cmd 'kind' '')) {
             'stop_app' { Start-AppStop -Command $cmd }
             default { Complete-Command -Id $id -Status 'failed' -Result @{ reason = 'unsupported'; message = 'This PC needs a newer version of Kidputer Control for that.' } }
         }
+    }
+}
+
+# --- App rules (roadmap #3, #4) and usage time (#5) ------------------------------------------------------------------
+
+function Get-AppIdentity {
+    <# Who a running program is, cached per path; Java's command line (for Minecraft) per process. #>
+    param([string]$Path, [string]$ProcessKey, [int]$ProcessId)
+    $exe = ($Path -split '[\\/]')[-1].ToLowerInvariant()
+    $cmd = $null
+    if ($exe -eq 'javaw.exe' -or $exe -eq 'java.exe') {
+        if (-not $appRun.Cmdline.ContainsKey($ProcessKey)) {
+            $c = ''
+            try { $c = [string](Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop).CommandLine } catch { }
+            $appRun.Cmdline[$ProcessKey] = $c
+        }
+        $cmd = $appRun.Cmdline[$ProcessKey]
+    }
+    if (-not $appRun.Identity.ContainsKey($Path)) {
+        if ($appRun.Identity.Count -gt 2000) { $appRun.Identity.Clear() }
+        $appRun.Identity[$Path] = @{ Version = (Get-KcFileVersionInfo -Path $Path) }
+    }
+    New-KcAppIdentity -Path $Path -VersionInfo $appRun.Identity[$Path].Version -CommandLine $cmd
+}
+
+function Add-ChildNotice {
+    param([string]$Text, [int]$Seconds = 8)
+    foreach ($n in @($appRun.Notices)) { if ($n.text -eq $Text) { $n.until = (Get-KcNow).AddSeconds($Seconds); return } }
+    [void]$appRun.Notices.Add(@{ text = $Text; until = (Get-KcNow).AddSeconds($Seconds) })
+}
+
+function Invoke-AppRules {
+    <#
+        Apps outside their allowed times: a newly started one is closed at once (it has nothing to save),
+        with a message saying when it's available; one that was already open when its time ran out gets
+        the same countdown warning as a parent's Close.
+    #>
+    $rules = @(Get-KcProp $state 'app_rules' @())
+    if ($rules.Count -eq 0 -or $null -eq $script:childSession) { $appRun.State.Clear(); return }
+    $catalog = @(Get-KcProp $state 'app_catalog' @())
+    $now = Get-KcNow
+    $horizon = ConvertTo-KcDate (Get-KcProp $state 'lock_windows_until')
+    $useWeekly = ($null -eq $horizon -or $now -ge $horizon)
+    $alive = @{}
+    foreach ($p in (Get-KcSessionProcessList -SessionId $script:childSession)) {
+        if (-not $p.Path) { continue }
+        if (Test-KcProtectedProcess -Name $p.Name -Path $p.Path -InstallRoot $InstallRoot) { continue }
+        $key = "$($p.Id)|$($p.StartTime)"
+        $alive[$key] = $true
+        $app = Find-KcCatalogApp -Identity (Get-AppIdentity -Path $p.Path -ProcessKey $key -ProcessId $p.Id) -Catalog $catalog
+        if ($null -eq $app) { continue }
+        $rule = Get-KcAppRule -App $app -Rules $rules
+        $d = Test-KcAppAllowed -Rule $rule -Now $now -UseWeekly:$useWeekly
+        $prev = $appRun.State[$key]
+        if ($d.Allowed) { $appRun.State[$key] = 'allowed'; continue }
+        if ($prev -eq 'stopping') { continue }
+        # Already open before the watchdog started, or allowed until now: warn first.
+        $startedEarlier = $false
+        $ticks = 0L
+        if ([long]::TryParse([string]$p.StartTime, [ref]$ticks)) { $startedEarlier = $ticks -lt $watchdogStartTicks }
+        if ($prev -eq 'allowed' -or ($null -eq $prev -and $startedEarlier)) {
+            $grace = [Math]::Min([Math]::Max([int](Get-KcProp $state 'countdown_seconds' 300), 30), 300)
+            if (-not @($appStops | Where-Object { $_.Path -eq $p.Path }).Count) {
+                [void]$appStops.Add(@{ CommandId = $null; Path = $p.Path; Name = [string]$app.name; EndsAt = $now.AddSeconds($grace); ForceAt = $null })
+                Add-KcEvent -Type 'app.time_up' -Message "$($app.name): allowed time is over, closing in $grace seconds" -Data @{ app = $app.id; path = $p.Path }
+            }
+            $appRun.State[$key] = 'stopping'
+            continue
+        }
+        try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { }
+        $appRun.State[$key] = 'blocked'
+        Add-ChildNotice -Text (Get-KcBlockedMessage -Name ([string]$app.name) -Decision $d)
+        $last = $appRun.BlockedEventAt[[string]$app.id]
+        if ($null -eq $last -or ($now - $last).TotalMinutes -ge 10) {
+            $appRun.BlockedEventAt[[string]$app.id] = $now
+            Add-KcEvent -Type 'app.blocked' -Message "$($app.name) was blocked (not allowed right now)" -Data @{ app = $app.id; name = $app.name; path = $p.Path }
+        }
+    }
+    foreach ($k in @($appRun.State.Keys)) { if (-not $alive.ContainsKey($k)) { $appRun.State.Remove($k); $appRun.Cmdline.Remove($k) } }
+    foreach ($n in @($appRun.Notices)) { if ($now -ge $n.until) { $appRun.Notices.Remove($n) } }
+}
+
+function Add-UsageSample {
+    <# The UI agent's minute of "what was in front" (untrusted input: validated and capped). #>
+    param($Request)
+    $now = Get-KcNow
+    if (($now - $appRun.LastUsageMsg).TotalSeconds -lt 45) { return }
+    $appRun.LastUsageMsg = $now
+    $day = Get-KcUsageDay -Now $now -DayStarts @(Get-KcProp $state 'day_starts' @())
+    if (-not $day) { $day = [DateTime]::Now.ToString('yyyy-MM-dd') }
+    $catalog = @(Get-KcProp $state 'app_catalog' @())
+    $budget = 70
+    $active = [Math]::Min([Math]::Max([int](Get-KcProp $Request 'active_seconds' 0), 0), 70)
+    if ($active -gt 0) { Add-KcUsage -Usage $usage -Day $day -Key '_total' -Name 'Screen time' -Seconds $active }
+    foreach ($s in @(Get-KcProp $Request 'samples' @()) | Select-Object -First 10) {
+        $path = [string](Get-KcProp $s 'path' '')
+        $secs = [Math]::Min([Math]::Max([int](Get-KcProp $s 'seconds' 0), 0), $budget)
+        if (-not $path -or $path.Length -gt 1024 -or $secs -le 0) { continue }
+        $budget -= $secs
+        $pid0 = 0; $pkey = "usage|$path"
+        if ($null -ne $script:childSession) {
+            $match = @(Get-KcSessionProcessList -SessionId $script:childSession | Where-Object { $_.Path -and [string]::Equals($_.Path, $path, [StringComparison]::OrdinalIgnoreCase) }) | Select-Object -First 1
+            if ($match) { $pid0 = $match.Id; $pkey = "$($match.Id)|$($match.StartTime)" }
+        }
+        $identity = Get-AppIdentity -Path $path -ProcessKey $pkey -ProcessId $pid0
+        $app = Find-KcCatalogApp -Identity $identity -Catalog $catalog
+        if ($app) {
+            Add-KcUsage -Usage $usage -Day $day -Key ([string]$app.id) -Name ([string]$app.name) -Category ([string]$app.category) -Path $path -Seconds $secs
+        } else {
+            $v = $appRun.Identity[$path].Version
+            $name = Get-KcAppDisplayName -Process ([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension(($path -split '[\\/]')[-1]) }) -VersionInfo $v
+            Add-KcUsage -Usage $usage -Day $day -Key ('exe:' + ($path -split '[\\/]')[-1].ToLowerInvariant()) -Name $name -Path $path -Seconds $secs
+        }
+        if ($budget -le 0) { break }
+    }
+    $appRun.UsageDirty = $true
+    if (($now - $appRun.UsageSavedAt).TotalSeconds -ge 60) {
+        Write-KcJsonFile -Path $usageFile -Object $usage
+        $appRun.UsageSavedAt = $now
     }
 }
 
@@ -647,6 +790,7 @@ function Update-Enforcement {
         device_name       = Get-KcProp $state 'name'
         app_warnings      = @($appStops | Where-Object { $null -eq $_.ForceAt } | ForEach-Object { [ordered]@{ name = $_.Name; ends_at = (ConvertTo-KcIso $_.EndsAt) } })
         app_closing       = @($appStops | Where-Object { $null -ne $_.ForceAt } | ForEach-Object { $_.Path })
+        notices           = @($appRun.Notices | ForEach-Object { [ordered]@{ text = $_.text; until = (ConvertTo-KcIso $_.until) } })
     }
     $json = ConvertTo-Json -InputObject $uiState -Depth 5 -Compress
     if ($json -ne $script:lastUiJson) {
@@ -702,6 +846,7 @@ while ($true) {
         if ($script:localDirty) { Save-Local; $script:localDirty = $false }
         Update-UiAgent
         Invoke-Commands
+        Invoke-AppRules
         Update-AppStops
         Invoke-SyncStep
         Invoke-TamperCheck

@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
 import InstallPanel, { ModeChoice } from "../InstallPanel";
 import AppsTab from "../device/AppsTab";
+import RulesTab from "../device/RulesTab";
+import UsageTab from "../device/UsageTab";
 import { UserCancelled } from "../cancel";
 import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
@@ -30,6 +32,8 @@ interface Live {
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "apps", label: "Apps" },
+  { id: "rules", label: "App rules" },
+  { id: "usage", label: "Usage" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -76,6 +80,8 @@ export default function DeviceDetail() {
         ))}
       </div>
       {tab === "apps" && <AppsTab device={device} />}
+      {tab === "rules" && <RulesTab device={device} />}
+      {tab === "usage" && <UsageTab device={device} />}
       {tab === "overview" && (
         <div className="columns">
           <div className="stack">

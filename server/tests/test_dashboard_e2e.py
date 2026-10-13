@@ -480,3 +480,62 @@ def test_running_apps_and_closing_one(page, live_app):
     page.set_viewport_size({"width": 390, "height": 844})
     assert_fits_screen(page)
     shot(page, "41-apps-phone")
+
+
+def test_app_rules_custom_apps_and_usage(page, live_app):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    _, secret = make_admin()
+    agent = make_enrolled_device(live_app)
+    agent.post("/api/v1/agent/reports/processes", json={"processes": [
+        {"pid": 5, "name": "Terraria", "path": "D:\\Games\\Terraria\\Terraria.exe", "has_window": True, "system": False, "product": "Terraria", "company": "Re-Logic"},
+    ]})
+    today = datetime.now(ZoneInfo("Europe/London")).date().isoformat()
+    agent.post("/api/v1/agent/reports/usage", json={"days": {today: {
+        "_total": {"name": "Screen time", "seconds": 5400},
+        "roblox": {"name": "Roblox", "category": "games", "seconds": 3000},
+        "chrome": {"name": "Google Chrome", "category": "browsers", "seconds": 1800},
+    }}})
+    page.on("dialog", lambda d: d.accept())
+    sign_in_ui(page, secret)
+    page.locator(".device-card").click()
+
+    # A schedule for all games: weekdays 16-19, weekends 10-20 (the defaults).
+    page.get_by_role("tab", name="App rules").click()
+    expect(page.get_by_text("No rules yet")).to_be_visible()
+    page.get_by_role("button", name="Add a rule").click()
+    page.get_by_role("button", name="Save rule").click()
+    rules = page.get_by_test_id("app-rules")
+    expect(rules).to_contain_text("Only Mon–Fri 16:00–19:00, Sat–Sun 10:00–20:00")
+
+    # Block a game the child has been playing that isn't in the catalogue.
+    page.get_by_role("button", name="Add a rule").click()
+    page.get_by_role("button", name="An app that isn't listed…").click()
+    page.get_by_test_id("seen-apps").get_by_role("button", name="Use").click()
+    expect(page.get_by_label("Program file name")).to_have_value("Terraria.exe")
+    page.get_by_role("button", name="Add app").click()
+    expect(page.get_by_label("Which apps")).to_have_value(re.compile(r"^app:custom:"))
+    page.get_by_label("Blocked").check()
+    page.get_by_role("button", name="Save rule").click()
+    expect(rules).to_contain_text("Terraria")
+    expect(rules).to_contain_text("Blocked")
+    expect(page.get_by_test_id("custom-apps")).to_contain_text("Terraria.exe")
+    shot(page, "50-app-rules")
+
+    state = agent.get("/api/v1/agent/state").json()
+    assert [r["mode"] for r in state["app_rules"]] == ["block", "schedule"]  # the app's own rule first
+    assert any(a["name"] == "Terraria" and a["matchers"] == [{"exe": "Terraria.exe", "product": "Terraria"}] for a in state["app_catalog"])
+
+    page.get_by_role("tab", name="Usage").click()
+    expect(page.get_by_role("heading", name="Today")).to_be_visible()
+    expect(page.get_by_test_id("usage-apps")).to_contain_text("Roblox")
+    expect(page.get_by_test_id("usage-apps")).to_contain_text("50 min")
+    expect(page.get_by_test_id("usage-categories")).to_contain_text("Games")
+    shot(page, "51-usage")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_fits_screen(page)
+    page.get_by_role("tab", name="App rules").click()
+    expect(page.get_by_test_id("app-rules")).to_be_visible()
+    assert_fits_screen(page)
+    shot(page, "52-app-rules-phone")

@@ -338,7 +338,7 @@ def test_recent_notifications_list(admin_client, agent):
 
 def test_settings_page_only_offers_alerts_that_exist_yet(admin_client):
     shown = [c["id"] for c in admin_client.get(f"{N}/settings").json()["categories"]]
-    assert shown == ["silent", "tamper", "installs", "first_run", "vpn", "accounts", "defender", "archives", "usb", "pin", "power"]
+    assert shown == ["silent", "tamper", "installs", "first_run", "vpn", "accounts", "defender", "blocked_apps", "archives", "usb", "pin", "power"]
 
 
 def test_change_monitoring_events_reach_parents(agent):
