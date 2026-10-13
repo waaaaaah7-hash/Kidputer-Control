@@ -1,6 +1,6 @@
 # Kidputer Control — Roadmap
 
-This is the plan after version 1.0.0. Versions 1.1.0 and 1.2.0 are built (everything in the 1.1 and 1.2 rows below). It includes the features already on record (app and process
+This is the plan after version 1.0.0. Versions 1.1.0 and 1.2.0 are built (everything in the 1.1 and 1.2 rows below), and the dashboard has had a redesign with a phone-first home page. It includes the features already on record (app and process
 management, usage quotas, weekly reports, bonus time), the Managed and Trusted modes with change
 notifications, and further suggestions. Each one is rated for effort, feasibility, and
 practicality.

@@ -415,7 +415,13 @@ accepts one. The watchdog reports `child_is_admin` every 10 minutes and only rai
   the same origin as the API:
   - The SameSite=Strict session cookie works without CORS.
   - The API sends a strict Content-Security-Policy for the app: `'self'` only, no inline scripts.
-  - Its only runtime dependencies are React, React Router, and `qrcode` (for the 2FA QR code).
+  - Its only runtime dependencies are React, React Router, `qrcode` (for the 2FA QR code), and the
+    Figtree font, bundled from `@fontsource-variable/figtree` so no font is loaded from elsewhere.
+  - Layout: from 900 px wide, a sidebar with the main links and the PCs; below that, a slim top
+    bar and a fixed menu bar along the bottom. A PC's page has its sections as tabs (Overview,
+    Apps, App rules, Usage, Files, Schedule and settings).
+  - The countdown to bedtime and the hour-by-hour bar are worked out in the browser from the PC's
+    schedule and time zone (`web/src/bedtime.ts`), so they need no extra API.
 - **First admin:** Render's free tier has no shell, so the first admin is created at start-up from
   `KC_BOOTSTRAP_ADMIN_EMAIL`/`KC_BOOTSTRAP_ADMIN_PASSWORD`, and only while no admin exists.
 

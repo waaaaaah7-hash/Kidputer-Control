@@ -1,14 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override } from "../api";
+import { api, type Device, type DeviceSettings, type LockRequest, type Message, type Override, type ScheduleEntry } from "../api";
+import { groupProcesses, type AppGroup } from "../apps";
+import { bedtimeSummary, clock, extraTimePeriods, localTime, lockedPeriods } from "../bedtime";
 import InstallPanel, { ModeChoice } from "../InstallPanel";
-import AppsTab from "../device/AppsTab";
+import MessageForm from "../MessageForm";
+import AppsTab, { CloseDialog } from "../device/AppsTab";
 import RulesTab from "../device/RulesTab";
 import UsageTab from "../device/UsageTab";
 import FilesTab from "../device/FilesTab";
 import { UserCancelled } from "../cancel";
 import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
+import { Icon } from "../icons";
+import { useLiveDevice } from "../live";
+import { formatDuration } from "../rules";
 import {
   DAYS,
   describeWindow,
@@ -28,6 +34,7 @@ interface Live {
   lock: LockRequest | null;
   overrides: Override[];
   message: Message | null;
+  entries: ScheduleEntry[];
 }
 
 const TABS = [
@@ -36,6 +43,7 @@ const TABS = [
   { id: "rules", label: "App rules" },
   { id: "usage", label: "Usage" },
   { id: "files", label: "Files" },
+  { id: "settings", label: "Schedule and settings" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -45,8 +53,14 @@ export default function DeviceDetail() {
   const tab: TabId = TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as TabId) : "overview";
   const live = useLoader<Live>(
     async () => {
-      const [device, lock, overrides, message] = await Promise.all([api.device(id), api.lock(id), api.overrides(id), api.message(id)]);
-      return { device, lock, overrides, message };
+      const [device, lock, overrides, message, schedule] = await Promise.all([
+        api.device(id),
+        api.lock(id),
+        api.overrides(id),
+        api.message(id),
+        api.schedule(id),
+      ]);
+      return { device, lock, overrides, message, entries: schedule.entries };
     },
     [id],
     10000,
@@ -63,9 +77,9 @@ export default function DeviceDetail() {
   return (
     <>
       <p className="crumbs">
-        <Link to="/">Devices</Link> /
+        <Link to="/">All PCs</Link> /
       </p>
-      <StatusHeader device={device} />
+      <Hero live={live.data} onChange={refresh} onMessage={() => focusMessage(device.id, () => setParams({}, { replace: true }))} />
       <ErrorNote error={live.error} />
       <div className="tabs" role="tablist" aria-label="Device sections">
         {TABS.map((t) => (
@@ -86,18 +100,29 @@ export default function DeviceDetail() {
       {tab === "usage" && <UsageTab device={device} />}
       {tab === "files" && <FilesTab device={device} />}
       {tab === "overview" && (
+        <div className="stack">
+          {device.enrolled && <DayTimeline live={live.data} />}
+          <div className="columns">
+            <div className="stack">
+              {device.enrolled && <RunningNow device={device} onAll={() => setParams({ tab: "apps" }, { replace: true })} />}
+              <MessagePanel device={device} message={live.data.message} onChange={refresh} />
+            </div>
+            <div className="stack">
+              <Card title="Recent activity" actions={<Link to={`/activity?device=${device.id}`}>All activity</Link>}>
+                {events.data ? <EventList events={events.data} /> : <Spinner />}
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
+      {tab === "settings" && (
         <div className="columns">
           <div className="stack">
-            <RightNow live={live.data} onChange={refresh} />
-            <MessagePanel device={device} message={live.data.message} onChange={refresh} />
-            <Card title="Recent activity" actions={<Link to={`/activity?device=${device.id}`}>All activity</Link>}>
-              {events.data ? <EventList events={events.data} /> : <Spinner />}
-            </Card>
+            <SchedulePanel device={device} onChange={refresh} />
+            <DevicePanel device={device} onChange={refresh} />
           </div>
           <div className="stack">
-            <SchedulePanel device={device} onChange={refresh} />
             <SettingsPanel device={device} onChange={refresh} />
-            <DevicePanel device={device} onChange={refresh} />
           </div>
         </div>
       )}
@@ -105,11 +130,28 @@ export default function DeviceDetail() {
   );
 }
 
-// --- Status -------------------------------------------------------------------------------------
+/** Jump to the message box on the Overview, switching to it first if another section is open. */
+function focusMessage(deviceId: string, showOverview: () => void) {
+  showOverview();
+  window.setTimeout(() => {
+    const box = document.getElementById(`message-${deviceId}`);
+    box?.scrollIntoView({ behavior: "smooth", block: "center" });
+    box?.focus({ preventScroll: true });
+  }, 50);
+}
 
-function StatusHeader({ device }: { device: Device }) {
+// --- Status, countdown, lock now and extra time --------------------------------------------------------
+
+function Hero({ live, onChange, onMessage }: { live: Live; onChange: () => Promise<void>; onMessage: () => void }) {
+  const { device, lock, overrides, entries } = live;
   const status = deviceStatus(device);
+  const summary = bedtimeSummary(device, entries);
   const s = device.last_status ?? {};
+  const [reason, setReason] = useState("");
+  const [until, setUntil] = useState("");
+  const toast = useToast();
+  const id = device.id;
+
   const warnings: string[] = [];
   if (status.online && s.console_user_is_child && s.ui_agent_alive === false) warnings.push("The lock screen isn't running on the PC right now.");
   if (s.clock_skew_seconds && Math.abs(s.clock_skew_seconds) > 300) warnings.push(`The PC's clock is off by ${Math.round(s.clock_skew_seconds / 60)} minutes.`);
@@ -117,44 +159,6 @@ function StatusHeader({ device }: { device: Device }) {
     warnings.push(`PIN entry is locked after wrong attempts until ${formatTime(s.pin_locked_until)}.`);
   if (device.mode === "managed" && s.child_is_admin)
     warnings.push("Your child's Windows account is an administrator, so they could switch Kidputer Control off. Make it a standard account in Windows Settings, or switch this PC to Trusted mode.");
-  return (
-    <header className="device-head">
-      <div>
-        <h1>
-          {device.name}{" "}
-          {device.mode === "trusted" && (
-            <span title="The child's account is an administrator: the schedule applies, but the child could switch it off.">
-              <Badge tone="info">Trusted</Badge>
-            </span>
-          )}
-        </h1>
-        <p className="muted small">
-          {device.enrolled
-            ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"}${device.agent_update_available ? ` (updating to ${device.agent_update_available})` : ""} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
-            : "Not installed yet"}
-        </p>
-      </div>
-      <div className="device-status">
-        <Badge tone={status.tone}>{status.label}</Badge>
-        <span>{status.detail}</span>
-      </div>
-      {warnings.map((w) => (
-        <p key={w} className="warning-note">
-          {w}
-        </p>
-      ))}
-    </header>
-  );
-}
-
-// --- Lock now / extra time ------------------------------------------------------------------------
-
-function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void> }) {
-  const { device, lock, overrides } = live;
-  const [reason, setReason] = useState("");
-  const [until, setUntil] = useState("");
-  const toast = useToast();
-  const id = device.id;
 
   const grant = async (minutes: number) => {
     await api.createOverride(id, { duration_minutes: minutes, reason: "Extra time" });
@@ -174,54 +178,73 @@ function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void
   }
 
   return (
-    <Card title="Right now">
-      {lock ? (
+    <section className="card hero device-head" aria-labelledby="device-name">
+      <div className="hero-top">
+        <div className="hero-main">
+          <div className="device-status">
+            <Badge tone={status.tone}>{status.label}</Badge>
+            <span>{status.detail}</span>
+          </div>
+          <h1 id="device-name">
+            {device.name}{" "}
+            {device.mode === "trusted" && (
+              <span title="The child's account is an administrator: the schedule applies, but the child could switch it off.">
+                <Badge tone="info">Trusted</Badge>
+              </span>
+            )}
+          </h1>
+          <p className="muted small">
+            {device.enrolled
+              ? `${device.hostname ?? "PC"} · agent ${device.agent_version ?? "?"}${device.agent_update_available ? ` (updating to ${device.agent_update_available})` : ""} · seen ${relativeTime(device.last_seen_at)} · ${device.timezone}`
+              : "Not installed yet: open Schedule and settings to install it."}
+          </p>
+        </div>
+        {summary.value && (
+          <div className="hero-countdown">
+            <span className={summary.value === "Locked" ? "countdown-value locked" : "countdown-value"}>{summary.value}</span>
+            <span className="muted">{summary.caption}</span>
+          </div>
+        )}
+      </div>
+      {warnings.map((w) => (
+        <p key={w} className="warning-note">
+          {w}
+        </p>
+      ))}
+
+      {lock && (
         <div className="callout tone-danger">
           <p>
             <strong>Locked by a parent</strong> {relativeTime(lock.created_at)}
             {lock.reason ? ` — "${lock.reason}"` : ""}. {lock.applied_at ? "The PC has locked." : "Waiting for the PC to pick it up."}
           </p>
+        </div>
+      )}
+      <div className="hero-actions">
+        {lock ? (
           <ActionButton variant="primary" success="Immediate lock cleared" onClick={async () => { await api.clearLock(id); await onChange(); }}>
             End immediate lock
           </ActionButton>
-        </div>
-      ) : (
-        <div className="row">
-          <input aria-label="Reason (optional)" placeholder="Reason (optional, shown on screen)" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
-          <ActionButton
-            variant="danger"
-            success="Lock requested"
-            onClick={async () => {
-              await api.requestLock(id, reason.trim());
-              setReason("");
-              await onChange();
-            }}
-          >
-            Lock now
+        ) : (
+          <ActionButton variant="primary" success="Lock requested" onClick={async () => { await api.requestLock(id); await onChange(); }}>
+            <Icon name="lock" /> Lock now
           </ActionButton>
-        </div>
-      )}
-
-      <h3>Extra time</h3>
-      <p className="muted small">Unlocks the PC even during the schedule. An immediate lock still wins.</p>
-      <div className="row wrap">
-        <ActionButton success="Granted 30 minutes" onClick={() => grant(30)}>+30 min</ActionButton>
-        <ActionButton success="Granted 1 hour" onClick={() => grant(60)}>+1 hour</ActionButton>
-        <ActionButton success="Granted 2 hours" onClick={() => grant(120)}>+2 hours</ActionButton>
-        <form className="row until" onSubmit={grantUntil}>
-          <input type="datetime-local" aria-label="Unlock until" required value={until} onChange={(e) => setUntil(e.target.value)} />
-          <button type="submit" className="btn btn-secondary">
-            Until…
-          </button>
-        </form>
+        )}
+        <ActionButton variant="outline" success="Granted 30 minutes" onClick={() => grant(30)}>+30 min</ActionButton>
+        <ActionButton variant="outline" success="Granted 1 hour" onClick={() => grant(60)}>+1 hour</ActionButton>
+        <ActionButton variant="outline" success="Granted 2 hours" onClick={() => grant(120)}>+2 hours</ActionButton>
+        <button type="button" className="btn btn-secondary" onClick={onMessage}>
+          <Icon name="message" /> Message
+        </button>
       </div>
+
       {overrides.length > 0 && (
         <ul className="list">
           {overrides.map((o) => (
             <li key={o.id} className="list-row">
               <span>
-                {new Date(o.starts_at).getTime() > Date.now() ? `From ${formatDateTime(o.starts_at)} ` : ""}until <strong>{formatDateTime(o.ends_at)}</strong>
-                {o.reason ? <span className="muted"> · {o.reason}</span> : null}
+                Extra time {new Date(o.starts_at).getTime() > Date.now() ? `from ${formatDateTime(o.starts_at)} ` : ""}until <strong>{formatDateTime(o.ends_at)}</strong>
+                {o.reason && o.reason !== "Extra time" ? <span className="muted"> · {o.reason}</span> : null}
               </span>
               <ActionButton variant="ghost" success="Override cancelled" onClick={async () => { await api.cancelOverride(id, o.id); await onChange(); }}>
                 Cancel
@@ -230,6 +253,120 @@ function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void
           ))}
         </ul>
       )}
+
+      <details className="more-options">
+        <summary>More: lock with a reason, or unlock until a set time</summary>
+        <p className="muted small">Extra time unlocks the PC even during the schedule. An immediate lock still wins.</p>
+        <div className="stack">
+          {!lock && (
+            <div className="row wrap">
+              <input aria-label="Reason (optional)" placeholder="Reason, shown on the lock screen" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+              <ActionButton
+                variant="danger"
+                disabled={!reason.trim()}
+                success="Lock requested"
+                onClick={async () => {
+                  await api.requestLock(id, reason.trim());
+                  setReason("");
+                  await onChange();
+                }}
+              >
+                Lock with this reason
+              </ActionButton>
+            </div>
+          )}
+          <form className="row wrap" onSubmit={grantUntil}>
+            <input className="until" type="datetime-local" aria-label="Unlock until" required value={until} onChange={(e) => setUntil(e.target.value)} />
+            <button type="submit" className="btn btn-secondary">
+              Unlock until then
+            </button>
+          </form>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+// --- Today, hour by hour ------------------------------------------------------------------------------
+
+function DayTimeline({ live }: { live: Live }) {
+  const { device, entries, overrides } = live;
+  const usage = useLoader(() => api.usage(device.id, 1), [device.id], 60000);
+  const now = localTime(device.timezone);
+  const locked = lockedPeriods(entries, now.day);
+  const extra = extraTimePeriods(overrides, device.timezone, now.date);
+  const used = usage.data?.find((u) => u.day === now.date)?.total_seconds;
+  const pct = (m: number) => `${(m / (24 * 60)) * 100}%`;
+  const ranges = (list: [number, number][]) => list.map(([a, b]) => `${clock(a)} to ${clock(b)}`).join(", ");
+  const description =
+    (locked.length ? `Locked by the schedule ${ranges(locked)}.` : "No scheduled lock today.") +
+    (extra.length ? ` Extra time ${ranges(extra)}.` : "") +
+    ` It's ${clock(now.minutes)} on the PC.`;
+
+  return (
+    <Card title="Today, hour by hour" actions={used !== undefined ? <span className="small"><strong>{formatDuration(used)}</strong> used</span> : undefined}>
+      <div className="timeline" role="img" aria-label={description}>
+        {locked.map(([a, b]) => (
+          <span key={`l${a}`} className="tl-locked" style={{ left: pct(a), width: pct(b - a) }} />
+        ))}
+        {extra.map(([a, b]) => (
+          <span key={`e${a}`} className="tl-extra" style={{ left: pct(a), width: pct(b - a) }} />
+        ))}
+        <span className="tl-now" style={{ left: pct(now.minutes) }} />
+      </div>
+      <div className="timeline-scale" aria-hidden="true">
+        <span>00:00</span>
+        <span>06:00</span>
+        <span>12:00</span>
+        <span>18:00</span>
+        <span>24:00</span>
+      </div>
+      <ul className="legend" aria-hidden="true">
+        <li><span className="swatch tl-allowed" /> Allowed</li>
+        <li><span className="swatch tl-locked" /> Locked by the schedule</li>
+        <li><span className="swatch tl-extra" /> Extra time</li>
+        <li><span className="swatch-line" /> Now, {clock(now.minutes)}</li>
+      </ul>
+    </Card>
+  );
+}
+
+// --- Open right now -----------------------------------------------------------------------------------
+
+function RunningNow({ device, onAll }: { device: Device; onAll: () => void }) {
+  useLiveDevice(device.id);
+  const report = useLoader(() => api.processes(device.id), [device.id], 5000);
+  const [closing, setClosing] = useState<AppGroup | null>(null);
+  const apps = groupProcesses(report.data?.processes ?? []).filter((g) => g.hasWindow && !g.system);
+  const updated = report.data?.updated_at;
+  const fresh = updated ? Date.now() - new Date(updated).getTime() < 60000 : false;
+
+  return (
+    <Card title="Open right now" actions={<button type="button" className="link-button" onClick={onAll}>All apps</button>}>
+      {report.data === undefined ? (
+        <Spinner />
+      ) : !updated || !fresh ? (
+        <p className="muted">{deviceStatus(device).online ? "Asking the PC…" : "The PC isn't reporting right now."}</p>
+      ) : apps.length === 0 ? (
+        <p className="muted">No apps open{device.last_status?.console_user_is_child === false ? ": your child isn't signed in." : "."}</p>
+      ) : (
+        <ul className="list">
+          {apps.slice(0, 6).map((g) => (
+            <li key={g.key} className="list-row">
+              <span className="grow">
+                <strong>{g.name}</strong>
+                {g.windows > 1 && <span className="muted small"> · {g.windows} windows</span>}
+              </span>
+              {g.path && (
+                <button type="button" className="btn btn-secondary" onClick={() => setClosing(g)}>
+                  Close
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <CloseDialog device={device} group={closing} onDone={() => setClosing(null)} />
     </Card>
   );
 }
@@ -237,22 +374,6 @@ function RightNow({ live, onChange }: { live: Live; onChange: () => Promise<void
 // --- Message ---------------------------------------------------------------------------------------
 
 function MessagePanel({ device, message, onChange }: { device: Device; message: Message | null; onChange: () => Promise<void> }) {
-  const [body, setBody] = useState("");
-  const [mode, setMode] = useState<Message["mode"]>("closable");
-  const toast = useToast();
-
-  async function send(e: FormEvent) {
-    e.preventDefault();
-    try {
-      await api.sendMessage(device.id, body.trim(), mode);
-      setBody("");
-      toast("Message sent");
-      await onChange();
-    } catch (err) {
-      toast(errorMessage(err), "danger");
-    }
-  }
-
   return (
     <Card title="Message on screen">
       {message && (
@@ -267,26 +388,7 @@ function MessagePanel({ device, message, onChange }: { device: Device; message: 
           </ActionButton>
         </div>
       )}
-      <form className="stack" onSubmit={send}>
-        <label>
-          {message ? "Replace with a new message" : "Send a message"}
-          <textarea required maxLength={2000} rows={3} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Dinner's ready — time to wrap up!" />
-        </label>
-        <fieldset className="row wrap">
-          <legend className="sr-only">Message type</legend>
-          <label className="inline">
-            <input type="radio" name="mode" checked={mode === "closable"} onChange={() => setMode("closable")} /> Child can close it
-          </label>
-          <label className="inline">
-            <input type="radio" name="mode" checked={mode === "persistent"} onChange={() => setMode("persistent")} /> Stays until I remove it
-          </label>
-        </fieldset>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">
-            Send
-          </button>
-        </div>
-      </form>
+      <MessageForm deviceId={device.id} replacing={message !== null} onSent={onChange} />
     </Card>
   );
 }

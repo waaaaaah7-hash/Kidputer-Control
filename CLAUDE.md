@@ -87,6 +87,11 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
   call in `useReauth()`.
 - Test that layouts work at phone width (390px). The browser test checks for content overflowing
   its card.
+- Layout: a sidebar from 900px wide, and below that a top bar plus a fixed bottom menu bar. Both
+  carry a `nav` named "Main"; only one is visible at a time, so tests can use
+  `get_by_role("navigation", name="Main")` at any width.
+- Colours are CSS variables at the top of `styles.css` (warm light and dark themes). Use them
+  rather than new hex values.
 
 **Security posture**
 - The PIN hash and the device token live only in the SYSTEM-only config folder.

@@ -6,10 +6,14 @@ it's offline. From any browser or phone, a parent can lock the PC right away, gr
 send an on-screen message, see which apps are running and close one. Parents get alerts by email
 or on their phone, and everything that happens is recorded in one central activity log.
 
-![Devices overview](docs/screenshots/devices.png)
+![Home page: one card per PC with the time left until bedtime, big buttons, and today's events](docs/screenshots/devices.png)
 
 ## What it does
 
+- **Made for phones too:** each PC's card shows how long until bedtime, with big **Lock now**,
+  **+30 min** and **Message** buttons. On a phone the dashboard has a menu bar along the bottom,
+  like an app; on a computer, a sidebar lists your PCs. A bar shows each PC's day hour by hour:
+  when it's allowed, locked, or has extra time.
 - **Bedtime schedule:** a lock window for each night of the week, in the PC's own time zone. A
   countdown (5 minutes by default) warns the child before the PC locks.
 - **Lock now:** an immediate lock that applies even during extra time.
@@ -66,7 +70,7 @@ or on their phone, and everything that happens is recorded in one central activi
 - **Reversible:** locking always uses the Windows lock (`LockWorkStation`). Nothing is ever shut
   down, so no work is lost.
 
-| Device page | On a phone |
+| A PC's page | On a phone |
 |---|---|
 | ![Device page](docs/screenshots/device-page.png) | ![Phone view](docs/screenshots/phone.png) |
 
@@ -185,6 +189,16 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **New dashboard look:**
+  - Warm colours and a friendlier font, the same on a computer and a phone.
+  - **Home:** a card per PC with the time left until bedtime and big Lock now, +30 min and Message
+    buttons, next to today's events.
+  - **A PC's page:** the countdown and all the quick actions at the top, a bar showing the day
+    hour by hour, the apps open right now with Close buttons, and the message box. The schedule and
+    settings moved to their own **Schedule and settings** section.
+  - **On a computer** a sidebar lists your PCs with a coloured dot for each one's status. **On a
+    phone** a menu bar along the bottom takes you to Home, Activity, Alerts and Account.
 
 - **Version 1.2.0:**
   - **Change monitoring:** alerts for apps installed or removed, programs run for the first time

@@ -88,10 +88,13 @@ def shot(page, name: str, locator=None) -> None:
     if out:
         Path(out).mkdir(parents=True, exist_ok=True)
         path = str(Path(out) / f"{name}.png")
+        # Leave out the "Saved" pop-ups: they cover the page.
+        page.evaluate("document.querySelector('.toasts')?.style.setProperty('visibility', 'hidden')")
         if locator is None:
             page.screenshot(path=path, full_page=True)
         else:
             locator.screenshot(path=path)
+        page.evaluate("document.querySelector('.toasts')?.style.removeProperty('visibility')")
 
 
 def expect(locator):
@@ -114,7 +117,7 @@ def test_parent_journey(page, live_app):
     shot(page, "02-totp-setup")
     page.get_by_label("Code from the app").fill(pyotp.TOTP(secret).now())
     page.get_by_role("button", name="Turn on two-factor sign-in").click()
-    expect(page.get_by_role("heading", name="Devices")).to_be_visible()
+    expect(page.get_by_role("heading", name="Your PCs")).to_be_visible()
     expect(page.get_by_text("No PCs yet")).to_be_visible()
 
     # Add a PC and download its one-click installer.
@@ -151,8 +154,9 @@ def test_parent_journey(page, live_app):
     expect(page.locator(".device-head")).to_contain_text("SAM-PC · agent 1.0.0")
 
     # Lock now (immediate lock) with a reason.
-    page.get_by_placeholder("Reason (optional").fill("Homework first")
-    page.get_by_role("button", name="Lock now").click()
+    page.get_by_text("More: lock with a reason").click()
+    page.get_by_placeholder("Reason, shown on the lock screen").fill("Homework first")
+    page.get_by_role("button", name="Lock with this reason").click()
     expect(page.get_by_text("Locked by a parent")).to_be_visible()
     assert agent.get("/api/v1/agent/state").json()["immediate_lock"]["reason"] == "Homework first"
 
@@ -161,14 +165,18 @@ def test_parent_journey(page, live_app):
     expect(page.get_by_role("button", name="Cancel")).to_be_visible()
     assert len(agent.get("/api/v1/agent/state").json()["overrides"]) == 1
 
-    # Persistent message.
+    # Persistent message, on the Overview.
+    page.get_by_role("tab", name="Overview").click()
+    expect(page.get_by_role("img", name=re.compile("Locked by the schedule|No scheduled lock today"))).to_be_visible()
     page.get_by_label("Send a message").fill("Dinner in 10 minutes")
     page.get_by_label("Stays until I remove it").check()
     page.get_by_role("button", name="Send", exact=True).click()
     expect(page.locator(".message-body")).to_have_text("Dinner in 10 minutes")
     assert agent.get("/api/v1/agent/state").json()["message"]["mode"] == "persistent"
+    shot(page, "04-overview")
 
     # Schedule: Monday 21:30-07:00, copied to Tue-Fri.
+    page.get_by_role("tab", name="Schedule and settings").click()
     page.get_by_role("checkbox", name="Monday").check()
     page.get_by_label("Monday lock time").fill("21:30")
     page.get_by_label("Monday unlock time").fill("07:00")
@@ -199,8 +207,11 @@ def test_parent_journey(page, live_app):
     # Tamper alert from the agent shows on the devices overview and in the activity log.
     agent.post("/api/v1/agent/heartbeat", json={"status": {"mode": "none", "reason": "none", "tamper_problems": ["modified: Watchdog.ps1"]}})
     agent.post("/api/v1/agent/events", json={"events": [{"client_event_id": "6a1c9a9e-3c1a-4b6e-9f70-9d8d3cf0b001", "event_type": "tamper.detected", "severity": "critical", "message": "modified: Watchdog.ps1", "occurred_at": "2026-01-01T00:00:00Z"}]})
-    page.get_by_role("navigation", name="Main").get_by_role("link", name="Devices").click()
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Home").click()
     expect(page.locator(".device-card .badge")).to_have_text("Tamper alert")
+    # Bedtime is 21:30 on weekdays (UTC), so the card counts down to it, or (on a weekend) says there's none soon.
+    expect(page.locator(".device-card .countdown")).to_contain_text(re.compile("until bedtime at 21:30|No bedtime lock in the next 24 hours"))
+    expect(page.locator(".device-card .pc-card-foot")).to_contain_text("on the PC today")
     shot(page, "05-devices")
     page.get_by_role("navigation", name="Main").get_by_role("link", name="Activity").click()
     expect(page.get_by_text("Immediate lock requested")).to_be_visible()
@@ -211,8 +222,11 @@ def test_parent_journey(page, live_app):
 
     # Phone-sized layout.
     page.set_viewport_size({"width": 390, "height": 844})
-    page.get_by_role("navigation", name="Main").get_by_role("link", name="Devices").click()
-    page.locator(".device-card").click()
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Home").click()
+    expect(page.locator(".device-card .countdown")).to_be_visible()
+    assert_fits_screen(page)
+    shot(page, "07-phone-home")
+    page.locator(".device-card h2 a").click()
     expect(page.get_by_role("button", name="Lock now")).to_be_visible()
     assert_fits_screen(page)
     shot(page, "07-phone")
@@ -256,7 +270,7 @@ def test_passkeys_and_remembered_device(page, live_app):
     page.get_by_label("Authentication code").fill(pyotp.TOTP(secret).now())
     page.get_by_label("Remember this device for 30 days").check()
     page.get_by_role("button", name="Verify").click()
-    expect(page.get_by_role("heading", name="Devices", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="Your PCs", exact=True)).to_be_visible()
 
     # Add a passkey on the Account page.
     page.get_by_role("navigation", name="Main").get_by_role("link", name="Account").click()
@@ -289,7 +303,7 @@ def test_passkeys_and_remembered_device(page, live_app):
     expect(page.get_by_test_id("session-list")).to_contain_text("Password, remembered device")
 
     # ...but deleting a PC asks to confirm it's you; the passkey answers.
-    page.get_by_role("navigation", name="Main").get_by_role("link", name="Devices").click()
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Home").click()
     page.get_by_role("button", name="Add a PC").click()
     page.get_by_label("Name", exact=True).fill("Spare PC")
     page.get_by_role("button", name="Create").click()
@@ -298,7 +312,7 @@ def test_passkeys_and_remembered_device(page, live_app):
     expect(page.get_by_role("heading", name="Confirm it's you")).to_be_visible()
     shot(page, "10-confirm")
     page.get_by_role("button", name="Use a passkey").click()
-    expect(page.get_by_role("heading", name="Devices", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="Your PCs", exact=True)).to_be_visible()
     expect(page.get_by_text("Spare PC")).to_have_count(0)
 
     # Forget this browser: the next password sign-in asks for the code again.
@@ -324,12 +338,12 @@ def test_second_parent_invite_and_removal(page, live_app):
     page.get_by_role("button", name="Continue").click()
     page.get_by_label("Authentication code").fill(pyotp.TOTP(secret).now())
     page.get_by_role("button", name="Verify").click()
-    expect(page.get_by_role("heading", name="Devices")).to_be_visible()
+    expect(page.get_by_role("heading", name="Your PCs")).to_be_visible()
 
     page.get_by_role("navigation", name="Main").get_by_role("link", name="Account").click()
     page.get_by_label("Your name").fill("Alex")
     page.get_by_role("button", name="Save", exact=True).click()
-    expect(page.locator(".topbar-user")).to_contain_text("Alex")
+    expect(page.locator(".user-box")).to_contain_text("Alex")
     expect(page.get_by_test_id("parent-list")).to_contain_text("Alex")
 
     page.get_by_label("Email of the parent to invite").fill("partner@example.com")
@@ -354,7 +368,7 @@ def test_second_parent_invite_and_removal(page, live_app):
     partner_secret = partner.locator("code.secret").inner_text().replace(" ", "")
     partner.get_by_label("Code from the app").fill(pyotp.TOTP(partner_secret).now())
     partner.get_by_role("button", name="Turn on two-factor sign-in").click()
-    expect(partner.get_by_role("heading", name="Devices")).to_be_visible()
+    expect(partner.get_by_role("heading", name="Your PCs")).to_be_visible()
 
     # The link only works once.
     used = partner_ctx.new_page()
@@ -393,7 +407,7 @@ def sign_in_ui(page, secret: str, email: str = "parent@example.com") -> None:
     page.get_by_role("button", name="Continue").click()
     page.get_by_label("Authentication code").fill(pyotp.TOTP(secret).now())
     page.get_by_role("button", name="Verify").click()
-    expect(page.get_by_role("heading", name="Devices")).to_be_visible()
+    expect(page.get_by_role("heading", name="Your PCs")).to_be_visible()
 
 
 def test_notification_settings(page, live_app):
@@ -445,7 +459,7 @@ def test_running_apps_and_closing_one(page, live_app):
     agent = make_enrolled_device(live_app)
     page.on("dialog", lambda d: d.accept())
     sign_in_ui(page, secret)
-    page.locator(".device-card").click()
+    page.locator(".device-card h2 a").click()
     page.get_by_role("tab", name="Apps").click()
     expect(page.get_by_text("Waiting for the PC")).to_be_visible()
     # Opening the tab puts the PC on fast polling.
@@ -499,7 +513,7 @@ def test_app_rules_custom_apps_and_usage(page, live_app):
     }}})
     page.on("dialog", lambda d: d.accept())
     sign_in_ui(page, secret)
-    page.locator(".device-card").click()
+    page.locator(".device-card h2 a").click()
 
     # A schedule for all games: weekdays 16-19, weekends 10-20 (the defaults).
     page.get_by_role("tab", name="App rules").click()
@@ -563,7 +577,7 @@ def test_files_tab(page, live_app):
     agent.post("/api/v1/agent/reports/scan:C", json=scan(10))
     agent.post("/api/v1/agent/reports/scan:C", json=scan(22))
     sign_in_ui(page, secret)
-    page.locator(".device-card").click()
+    page.locator(".device-card h2 a").click()
     page.get_by_role("tab", name="Files").click()
 
     drives = page.get_by_test_id("drives")

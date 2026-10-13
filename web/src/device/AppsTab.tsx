@@ -96,7 +96,7 @@ function AppRow({ group: g, onClose }: { group: AppGroup; onClose?: () => void }
   );
 }
 
-function CloseDialog({ device, group, onDone }: { device: Device; group: AppGroup | null; onDone: () => void }) {
+export function CloseDialog({ device, group, onDone }: { device: Device; group: AppGroup | null; onDone: () => void }) {
   const toast = useToast();
   const close = async (grace: number) => {
     if (!group?.path) return;
