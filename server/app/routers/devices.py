@@ -99,7 +99,7 @@ def _issue_enrollment_code(device: Device, settings: SettingsDep) -> EnrollmentC
 
 @router.get("/devices", response_model=list[DeviceOut])
 def list_devices(db: DbDep, admin: AdminDep) -> list[DeviceOut]:
-    return [_device_out(d) for d in db.scalars(select(Device).order_by(Device.created_at))]
+    return [_device_out(d) for d in db.scalars(select(Device).order_by(Device.created_at, Device.name, Device.id))]
 
 
 @router.post("/devices", response_model=EnrollmentCodeOut, status_code=status.HTTP_201_CREATED)
