@@ -338,4 +338,22 @@ def test_recent_notifications_list(admin_client, agent):
 
 def test_settings_page_only_offers_alerts_that_exist_yet(admin_client):
     shown = [c["id"] for c in admin_client.get(f"{N}/settings").json()["categories"]]
-    assert shown == ["silent", "tamper", "pin", "power"]
+    assert shown == ["silent", "tamper", "installs", "first_run", "vpn", "accounts", "defender", "archives", "usb", "pin", "power"]
+
+
+def test_change_monitoring_events_reach_parents(agent):
+    post(
+        agent,
+        ev("software.installed", "Installed: Steam (Valve)"),
+        ev("program.first_run", "First run of Cool Game straight from a zip or other archive"),
+        ev("software.vpn_detected", "VPN installed: NordVPN"),
+        ev("account.admin_added", "Sam is now an administrator"),
+        ev("defender.disabled", "Windows Defender real-time protection was switched off"),
+        ev("usb.connected", "SANDISK (E:, 29.8 GB) connected: 3 programs, 2 archives"),
+        ev("archive.new", "New archive: mods.zip (12 MB)"),
+    )
+    got = sorted((n.category, n.level) for n in notifications())
+    assert got == [
+        ("accounts", "immediate"), ("archives", "digest"), ("defender", "immediate"), ("first_run", "immediate"),
+        ("installs", "immediate"), ("usb", "digest"), ("vpn", "immediate"),
+    ]

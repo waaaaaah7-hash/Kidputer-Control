@@ -153,6 +153,15 @@ a short schedule window, or an immediate lock, set from the dashboard.
     next check-in (a failed attempt is retried after an hour). The log shows "Kidputer Control updated from ... to ...",
     the device page shows the new agent version, and no tamper alert follows. Turning
     auto-update off on the device page stops this.
+17. **Change monitoring** (after the first two days, which only learn what's normal):
+    - Install a small program (machine-wide, and one just for the child): "App installed"
+      appears within a minute; uninstall it: "App removed".
+    - Unzip and run a portable program, or run one straight from a zip: "New program run",
+      saying it came from an archive.
+    - Save a .zip into the child's Downloads: "New archive file" within 5 minutes.
+    - Plug in a USB stick: "USB drive connected", with a count of programs and archives on it.
+    - Create a Windows account, or make one an administrator: an account alert within 2 minutes.
+    - Turn off Defender's real-time protection: "Virus protection switched off" within 5 minutes.
 
 ## Tests
 
@@ -161,6 +170,7 @@ a short schedule window, or an immediate lock, set from the dashboard.
 .\tests\Common.Tests.ps1    # decision logic, countdown, PIN and lockout, queue, inbox, tamper, install modes
 .\tests\Apps.Tests.ps1      # running apps: which processes may be closed, the process report
 .\tests\Update.Tests.ps1    # auto-update: fingerprints, install, rollback
+.\tests\Monitor.Tests.ps1   # change monitoring: installs, first runs, archives, accounts, USB, VPNs
 ```
 
 Both run on Windows PowerShell 5.1 and on PowerShell 7 (Windows CI runs both).

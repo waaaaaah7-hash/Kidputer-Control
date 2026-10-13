@@ -275,6 +275,29 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
   wasn't: a critical `device.agent_was_stopped`. A watchdog that was only asleep reports
   `pc.resumed` instead, which clears it.
 
+## Change monitoring (#17)
+
+`KidputerControl.Monitor.psm1`, run from the watchdog, each check on its own timer. What it
+remembers lives in the SYSTEM-only `config\monitor.json`; the first sighting of each list is a
+baseline, not a change.
+
+| Check | Every | Events |
+|---|---|---|
+| New processes in the child's session | 2 s | `program.first_run` (with where it ran from: straight out of an archive, a USB drive, Downloads, temp), `archive.opened` for 7-Zip/WinRAR/PeaZip/Bandizip |
+| Removable drives | 10 s | `usb.connected`, with a count of programs and archives in the top two folder levels |
+| Installed programs (uninstall registry: machine, 32-bit, and the child's own while signed in) | 1 min | `software.installed`, `software.uninstalled` |
+| Store apps for the child | 10 min | same |
+| Local accounts and the Administrators group | 2 min | `account.created`, `.deleted`, `.admin_added`, `.admin_removed` |
+| Defender real-time protection | 5 min | `defender.disabled`, `defender.enabled` |
+| Archives in Downloads, Desktop, Documents; Recent Items | 5 min | `archive.new`, `archive.opened` |
+
+- **First runs** key on the program's path with version-numbered folders made generic, so app
+  updates aren't "new". For the first 48 hours after monitoring starts, programs are learned
+  quietly. Memory is capped at 5,000 programs.
+- **VPN and remote-access apps** are recognised by name or publisher, on install or first run, and
+  also raise `software.vpn_detected`.
+- Archive *contents* are never read: only names, sizes and where things ran from.
+
 ## Managed and Trusted modes (#16)
 
 `devices.mode` is `managed` (standard child account) or `trusted` (administrator child account).

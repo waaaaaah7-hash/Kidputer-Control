@@ -31,7 +31,7 @@ practicality.
 | 14 | Several children on one PC | Suggested | M | High | Depends on the household |
 | 15 | Web/site filtering | Often expected | L | Low | Better handled outside the app |
 | 16 | Managed and Trusted modes, chosen in the installer **(done)** | Requested | S | High | High |
-| 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
+| 17 | Change monitoring: installs, first-run programs, archives, accounts, and more **(done)** | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
 | 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
 | 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
@@ -260,7 +260,7 @@ The installer, and the dashboard's download dialog, ask which mode the PC uses.
 | Change the clock | Clock warning, but only while online |
 | Create a second, unmonitored Windows account | New-account alert (#17) |
 
-## 17. Change monitoring — M–L
+## 17. Change monitoring — M–L — done
 
 These events feed the notifications in #10. Most are useful in both modes; some matter mainly in
 Trusted mode.

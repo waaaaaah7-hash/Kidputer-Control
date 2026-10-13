@@ -24,6 +24,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Common.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Apps.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Update.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Monitor.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $DataRoot
 
 # --- Single instance ------------------------------------------------------------------------------------
@@ -384,6 +385,166 @@ function Invoke-Commands {
     }
 }
 
+# --- Change monitoring (roadmap #17) ---------------------------------------------------------------------------------
+
+$monitorFile = Join-Path $paths.Config 'monitor.json'
+$mon = $null
+try { $mon = Read-KcJsonFile -Path $monitorFile } catch { $mon = $null }
+if ($null -eq $mon) { $mon = [pscustomobject]@{ started_at = (ConvertTo-KcIso (Get-KcNow)) } }
+$monSeen = @{}
+$seenProp = Get-KcProp $mon 'seen'
+if ($seenProp) { foreach ($p in $seenProp.PSObject.Properties) { $monSeen[$p.Name] = [string]$p.Value } }
+$monRun = @{ Due = @{}; KnownPids = @{}; Dirty = $false; SavedAt = [DateTimeOffset]::MinValue; ProfilePath = $null }
+# The first two days everything is "new", so programs are only learned, not reported.
+$LearningHours = 48
+
+function Test-MonDue {
+    param([string]$Name, [int]$Seconds)
+    $now = Get-KcNow
+    $due = $monRun.Due[$Name]
+    if ($null -ne $due -and $now -lt $due) { return $false }
+    $monRun.Due[$Name] = $now.AddSeconds($Seconds)
+    $true
+}
+
+function Set-MonValue {
+    param([string]$Name, $Value)
+    if ($mon.PSObject.Properties[$Name]) { $mon.$Name = $Value } else { $mon | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+    $monRun.Dirty = $true
+}
+
+function Add-MonEvents {
+    param([object[]]$Events)
+    foreach ($e in @($Events)) { if ($e) { Add-KcEventFromResult -Event $e } }
+}
+
+function Update-ProgramList {
+    <# Compare one installed-programs list with the stored one; the first time, just remember it. #>
+    param([string]$Name, $Current)
+    if ($null -eq $Current) { return }
+    $old = Get-KcProp $mon $Name
+    if ($null -ne $old) { Add-MonEvents (Get-KcProgramChangeEvents -Old @($old) -New @($Current)) }
+    Set-MonValue $Name @($Current)
+}
+
+function Invoke-ChangeMonitor {
+    $now = Get-KcNow
+    $learning = $false
+    $started = ConvertTo-KcDate (Get-KcProp $mon 'started_at')
+    if ($started -and ($now - $started).TotalHours -lt $LearningHours) { $learning = $true }
+
+    # Programs run for the first time (and archive tools opening an archive), in the child's session.
+    if ($null -ne $script:childSession -and (Test-MonDue 'processes' 2)) {
+        $removable = @((Get-KcRemovableDrives) | ForEach-Object { $_.name })
+        $alive = @{}
+        foreach ($p in (Get-KcSessionProcesses -SessionId $script:childSession)) {
+            $id = "$($p.Id)|$($p.StartTime)"
+            $alive[$id] = $true
+            if ($monRun.KnownPids.ContainsKey($id)) { continue }
+            $monRun.KnownPids[$id] = $true
+            if (-not $p.Path) { continue }
+            $v = Get-KcFileVersionInfo -Path $p.Path
+            $ev = Get-KcFirstRunEvent -Process $p -Seen $monSeen -Now (ConvertTo-KcIso $now) -RemovableDrives $removable -InstallRoot $InstallRoot -VersionInfo $v -Learning:$learning
+            if ($ev) {
+                Add-KcEventFromResult -Event $ev
+                if ($ev.data.ContainsKey('flagged')) {
+                    Add-KcEvent -Type 'software.vpn_detected' -Severity warning -Message "VPN or remote-control app run: $($ev.data.name)" -Data @{ name = $ev.data.name; kind = $ev.data.flagged; path = $p.Path }
+                }
+            }
+            $monRun.Dirty = $true
+            if (@('7zfm', '7zg', 'winrar', 'peazip', 'bandizip') -contains ([string]$p.Name).ToLowerInvariant()) {
+                try {
+                    $cmd = [string](Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$p.Id)" -ErrorAction Stop).CommandLine
+                    $m = [regex]::Match($cmd, '"?([^"]+\.(zip|rar|7z|tar|gz|iso))"?', 'IgnoreCase')
+                    if ($m.Success) { Add-KcEvent -Type 'archive.opened' -Message "Opened $([IO.Path]::GetFileName($m.Groups[1].Value)) in $($p.Name)" -Data @{ path = $m.Groups[1].Value; tool = $p.Name } }
+                } catch { }
+            }
+        }
+        foreach ($k in @($monRun.KnownPids.Keys)) { if (-not $alive.ContainsKey($k)) { $monRun.KnownPids.Remove($k) } }
+        Limit-KcSeenPrograms -Seen $monSeen
+    }
+
+    # USB drives, with a quick look at what's on them.
+    if (Test-MonDue 'usb' 10) {
+        $drives = @(Get-KcRemovableDrives)
+        $old = Get-KcProp $mon 'usb'
+        if ($null -ne $old) {
+            foreach ($d in (Compare-KcKeyed -Old @($old) -New $drives -Key 'name').Added) {
+                $sum = Get-KcDriveSummary -Root $d.name
+                $label = $d.label; if (-not $label) { $label = 'USB drive' }
+                $gb = [Math]::Round($d.size / 1GB, 1)
+                Add-KcEvent -Type 'usb.connected' -Message ("{0} ({1}, {2} GB) connected: {3} programs, {4} archives" -f $label, $d.name.TrimEnd('\'), $gb, $sum.programs, $sum.archives) `
+                    -Data @{ drive = $d.name; label = $d.label; size = $d.size; programs = $sum.programs; archives = $sum.archives }
+            }
+        }
+        Set-MonValue 'usb' $drives
+    }
+
+    # Installed programs: machine-wide, the child's own (only readable while signed in), Store apps.
+    if (Test-MonDue 'programs' 60) {
+        Update-ProgramList 'programs_machine' (Get-KcMachinePrograms)
+        Update-ProgramList 'programs_user' (Get-KcUserPrograms -Sid $childSid)
+    }
+    if (Test-MonDue 'store' 600) { Update-ProgramList 'programs_store' (Get-KcStoreApps -Sid $childSid) }
+
+    # Windows accounts and administrators.
+    if (Test-MonDue 'accounts' 120) {
+        $acc = Get-KcAccounts
+        if ($null -ne $acc) {
+            $old = Get-KcProp $mon 'accounts'
+            if ($null -ne $old) { Add-MonEvents (Get-KcAccountChangeEvents -Old $old -New $acc) }
+            Set-MonValue 'accounts' ([pscustomobject]$acc)
+        }
+    }
+
+    # Windows Defender real-time protection.
+    if (Test-MonDue 'defender' 300) {
+        $def = Get-KcDefenderState
+        if ($null -ne $def) {
+            $old = Get-KcProp $mon 'defender'
+            $was = $null
+            if ($null -ne $old) { $was = [bool](Get-KcProp $old 'realtime' $true) }
+            if ($null -ne $was -and $was -ne $def.realtime) {
+                if ($def.realtime) { Add-KcEvent -Type 'defender.enabled' -Message 'Windows Defender real-time protection is back on' }
+                else { Add-KcEvent -Type 'defender.disabled' -Severity warning -Message 'Windows Defender real-time protection was switched off' }
+            }
+            Set-MonValue 'defender' ([pscustomobject]$def)
+        }
+    }
+
+    # Archives: new files in Downloads, Desktop, Documents; archives opened in Explorer (Recent Items).
+    if (Test-MonDue 'archives' 300) {
+        if (-not $monRun.ProfilePath) { $monRun.ProfilePath = Get-KcProfilePath -Sid $childSid }
+        if ($monRun.ProfilePath) {
+            $files = @(Get-KcArchiveFiles -ProfilePath $monRun.ProfilePath)
+            $old = Get-KcProp $mon 'archives'
+            if ($null -ne $old) {
+                foreach ($f in (Compare-KcKeyed -Old @($old) -New $files -Key 'path').Added) {
+                    $mb = [Math]::Round($f.size / 1MB, 1)
+                    Add-KcEvent -Type 'archive.new' -Message "New archive: $([IO.Path]::GetFileName($f.path)) ($mb MB)" -Data @{ path = $f.path; size = $f.size }
+                }
+            }
+            Set-MonValue 'archives' $files
+            $recent = @(Get-KcRecentArchives -ProfilePath $monRun.ProfilePath)
+            $oldRecent = Get-KcProp $mon 'recent_archives'
+            if ($null -ne $oldRecent) {
+                foreach ($r in (Compare-KcKeyed -Old @($oldRecent) -New $recent -Key 'path').Added) {
+                    Add-KcEvent -Type 'archive.opened' -Message "Opened $($r.path)" -Data @{ path = $r.path; tool = 'explorer' }
+                }
+            }
+            Set-MonValue 'recent_archives' $recent
+        }
+    }
+
+    # Save at most once a minute.
+    if ($monRun.Dirty -and ($now - $monRun.SavedAt).TotalSeconds -ge 60) {
+        Set-MonValue 'seen' $monSeen   # a hashtable serialises straight to a JSON object
+        Write-KcJsonFile -Path $monitorFile -Object $mon
+        $monRun.Dirty = $false
+        $monRun.SavedAt = $now
+    }
+}
+
 # --- Auto-update --------------------------------------------------------------------------------------------------
 
 function Invoke-AgentUpdate {
@@ -545,6 +706,7 @@ while ($true) {
         Invoke-SyncStep
         Invoke-TamperCheck
         Update-ChildAdminStatus
+        try { Invoke-ChangeMonitor } catch { Write-KcLog -Level warning -Message "Change monitor: $($_.Exception.Message)" }
     } catch {
         Write-KcLog -Level error -Message ("Watchdog loop error: {0} {1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
         Start-Sleep -Seconds 2
