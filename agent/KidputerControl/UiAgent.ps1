@@ -21,6 +21,23 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -Namespace KcUi -Name User32 -MemberDefinition @'
 [DllImport("user32.dll", SetLastError = true)] public static extern bool LockWorkStation();
 [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
+[StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+[DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+public static uint IdleMilliseconds() {
+    LASTINPUTINFO i = new LASTINPUTINFO();
+    i.cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO));
+    if (!GetLastInputInfo(ref i)) return 0;
+    return (uint)Environment.TickCount - i.dwTime;
+}
+public static int ForegroundProcessId() {
+    uint pid;
+    System.IntPtr h = GetForegroundWindow();
+    if (h == System.IntPtr.Zero) return 0;
+    GetWindowThreadProcessId(h, out pid);
+    return (int)pid;
+}
 '@
 [void][KcUi.User32]::SetProcessDPIAware()
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -129,6 +146,50 @@ $appNotice = New-NoticeForm
 $appNotice.Title.Text = 'A parent is closing an app'
 $appNotice.Hint.Text = 'Save your work now.'
 $script:closeRequested = @{}   # process ids already asked to close
+
+# An app closed by an app rule: why, and when it's available.
+$blockedNotice = New-NoticeForm
+$blockedNotice.Title.Text = 'Not allowed right now'
+$blockedNotice.Text.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+$blockedNotice.Text.SetBounds(18, 36, 350, 46)
+$blockedNotice.Hint.Text = ''
+
+# --- Usage: which app is in front, minute by minute (not counted while idle or locked) -----------------------
+
+$IdleAfterMs = 120000
+$script:usageTicks = 0
+$script:usageSamples = @{}
+$script:usageActive = 0
+$script:usageMinuteStart = [DateTime]::UtcNow
+
+function Update-UsageSample {
+    # Called every 500 ms; samples every 5 s, sends a minute's worth to the watchdog.
+    $script:usageTicks++
+    if ($script:usageTicks % 10 -ne 0) { return }
+    $locked = ($null -ne $script:ui -and [string]$script:ui.mode -eq 'locked')
+    if (-not $locked -and [KcUi.User32]::IdleMilliseconds() -lt $IdleAfterMs) {
+        $fgPid = [KcUi.User32]::ForegroundProcessId()
+        if ($fgPid -gt 0 -and $fgPid -ne $PID) {
+            try {
+                $path = (Get-Process -Id $fgPid -ErrorAction Stop).Path
+                if ($path) {
+                    if (-not $script:usageSamples.ContainsKey($path)) { $script:usageSamples[$path] = 0 }
+                    $script:usageSamples[$path] += 5
+                }
+            } catch { }
+        }
+        $script:usageActive += 5
+    }
+    if (([DateTime]::UtcNow - $script:usageMinuteStart).TotalSeconds -ge 60) {
+        $script:usageMinuteStart = [DateTime]::UtcNow
+        if ($script:usageActive -gt 0) {
+            $samples = @($script:usageSamples.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 8 | ForEach-Object { @{ path = $_.Key; seconds = $_.Value } })
+            try { [void](New-KcInboxRequest -Type 'usage' -Fields @{ samples = $samples; active_seconds = $script:usageActive }) } catch { }
+        }
+        $script:usageSamples = @{}
+        $script:usageActive = 0
+    }
+}
 
 # --- Lock screen -------------------------------------------------------------------------------------------------
 
@@ -303,6 +364,9 @@ function Update-Ui {
         $ends = ConvertTo-KcDate $u.countdown_ends_at
         $left = [Math]::Max(0, [int][Math]::Ceiling(($ends - [DateTimeOffset]::UtcNow).TotalSeconds))
         $countdownText.Text = 'This PC locks in {0}:{1:00}' -f [int][Math]::Floor($left / 60), ($left % 60)
+        $hint = 'Save your work now.'
+        if ($u.PSObject.Properties['restart_tonight'] -and $u.restart_tonight) { $hint = 'Save your work: the PC restarts tonight to finish updates.' }
+        $countdownHint.Text = $hint
         if (-not $countdownForm.Visible) {
             $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
             $countdownForm.Location = New-Object System.Drawing.Point(($wa.Right - $countdownForm.Width - 16), ($wa.Bottom - $countdownForm.Height - 16))
@@ -328,6 +392,19 @@ function Update-Ui {
         Show-Notice $appNotice $slot
     } elseif ($appNotice.Form.Visible) {
         $appNotice.Form.Hide()
+    }
+
+    # An app rule just closed something: say why
+    $notices = @()
+    if ($null -ne $u -and $u.PSObject.Properties['notices']) { $notices = @($u.notices | Where-Object { (ConvertTo-KcDate $_.until) -gt [DateTimeOffset]::UtcNow }) }
+    if ($notices.Count) {
+        $blockedNotice.Text.Text = [string]$notices[-1].text
+        $slot = 0
+        if ($countdownForm.Visible) { $slot++ }
+        if ($appNotice.Form.Visible) { $slot++ }
+        Show-Notice $blockedNotice $slot
+    } elseif ($blockedNotice.Form.Visible) {
+        $blockedNotice.Form.Hide()
     }
 
     # Warning over: ask those apps to close themselves (they can still save). The watchdog, which can't
@@ -407,6 +484,7 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 500
 $timer.Add_Tick({
         try { Update-Ui } catch { Report-UiError ("UI tick failed: {0}" -f $_.Exception.Message) }
+        try { Update-UsageSample } catch { }
     })
 $timer.Start()
 try { Update-Ui } catch { Report-UiError ("UI start failed: {0}" -f $_.Exception.Message) }

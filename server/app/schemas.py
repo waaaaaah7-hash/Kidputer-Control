@@ -205,6 +205,8 @@ class DeviceOut(BaseModel):
     mode: DeviceMode
     # The agent version this server ships, when the PC runs a different one (None = up to date or unknown).
     agent_update_available: str | None = None
+    # Security tab (roadmap #23): {level: ok | attention | unknown, text, items}, None before the first report.
+    security: dict[str, Any] | None = None
 
 
 class EnrollmentCodeOut(BaseModel):
@@ -256,6 +258,12 @@ class SettingsIn(BaseModel):
     silent_alert_minutes: int | None = Field(default=None, ge=0, le=1440)
     show_window_titles: bool | None = None
     auto_update: bool | None = None
+    scan_every_days: int | None = Field(default=None, ge=0, le=90)
+    updates_mode: Literal["install", "report"] | None = None
+    feature_updates: bool | None = None
+    restart_for_updates: bool | None = None
+    weekly_full_scan: bool | None = None
+    block_pause_updates: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -271,6 +279,12 @@ class SettingsOut(BaseModel):
     silent_alert_minutes: int
     show_window_titles: bool
     auto_update: bool
+    scan_every_days: int
+    updates_mode: str
+    feature_updates: bool
+    restart_for_updates: bool
+    weekly_full_scan: bool
+    block_pause_updates: bool
     updated_at: datetime
 
 

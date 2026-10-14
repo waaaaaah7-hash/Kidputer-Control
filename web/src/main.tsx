@@ -5,6 +5,7 @@ import App from "./App";
 import { AuthProvider } from "./auth";
 import { registerServiceWorker } from "./push";
 import { ReauthProvider } from "./reauth";
+import "@fontsource-variable/figtree";
 import "./styles.css";
 import { ToastProvider } from "./ui";
 

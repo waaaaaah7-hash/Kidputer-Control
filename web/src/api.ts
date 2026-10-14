@@ -1,6 +1,8 @@
 // Typed client for the Kidputer Control API. Types mirror server/app/schemas.py.
 // The dashboard is served from the same origin as the API, so the session cookie is sent automatically.
 
+import type { AppRule, AppRuleIn } from "./rules";
+
 export interface Admin {
   id: string;
   email: string;
@@ -99,6 +101,151 @@ export interface DeviceCommand {
   completed_at: string | null;
 }
 
+export interface CatalogApp {
+  id: string;
+  name: string;
+  category: string;
+  custom: boolean;
+  matchers: Record<string, string>[];
+}
+
+export interface AppCatalog {
+  categories: Record<string, string>;
+  apps: CatalogApp[];
+}
+
+export interface UsageDay {
+  day: string;
+  total_seconds: number;
+  apps: { key: string; name: string; category: string | null; seconds: number }[];
+}
+
+export interface SeenApp {
+  key: string;
+  name: string;
+  path: string | null;
+  exe: string | null;
+  product: string | null;
+  company: string | null;
+  catalog_id: string | null;
+  last_seen: string | null;
+}
+
+// --- Security tab (roadmap #23) ---
+
+export interface SecuritySummary {
+  level: "ok" | "attention" | "unknown";
+  text: string;
+  items: { level: "attention" | "info"; text: string }[];
+}
+
+export interface Threat {
+  id: string;
+  name: string;
+  severity: "low" | "moderate" | "high" | "severe" | "unknown";
+  status: string;
+  needs_action: boolean;
+  detected_at: string | null;
+  files: string[];
+}
+
+export interface DefenderReport {
+  available: boolean;
+  antivirus_enabled: boolean;
+  realtime: boolean;
+  tamper_protected: boolean | null;
+  running_mode: string | null;
+  signatures_updated: string | null;
+  signature_version: string | null;
+  quick_scan_at: string | null;
+  full_scan_at: string | null;
+  threats: Threat[];
+  other_antivirus: { name: string; enabled: boolean; up_to_date: boolean }[];
+}
+
+export interface PendingUpdate {
+  title: string;
+  kb: string | null;
+  kind: "security" | "quality" | "definition" | "feature" | "driver";
+  size: number;
+  severity: string;
+  downloaded: boolean;
+}
+
+export interface UpdatesReport {
+  windows?: { name: string; version: string | null; build: string | null; edition?: string | null };
+  /** Is Windows' "Pause updates" button hidden? "unsupported" on Windows Home. */
+  pause_blocking?: "on" | "off" | "unsupported";
+  /** Updates are waiting for mains power, or for a connection that isn't metered. */
+  install_waiting?: "power" | "unmetered" | null;
+  reboot_required?: boolean;
+  reboot_required_since?: string | null;
+  paused_until?: string | null;
+  service_disabled?: boolean;
+  last_search_at?: string | null;
+  last_installed_at?: string | null;
+  pending: PendingUpdate[];
+  last_check_at: string | null;
+  last_install: { at: string; installed: string[]; failed: string[]; message: string | null } | null;
+}
+
+export type SecurityAction = "quick_scan" | "full_scan" | "update_signatures" | "remove_threats" | "check_updates" | "install_updates";
+
+export interface SecurityState {
+  updated_at: string | null;
+  report: {
+    defender: DefenderReport | null;
+    updates: UpdatesReport;
+    running: { action: SecurityAction; started_at: string } | null;
+    queued: SecurityAction[];
+  } | null;
+  summary: SecuritySummary | null;
+  commands: DeviceCommand[];
+}
+
+export interface DriveInfo {
+  name: string;
+  label: string;
+  type: string;
+  format: string;
+  size: number;
+  free: number;
+}
+
+export interface DrivesReport {
+  updated_at: string | null;
+  drives: DriveInfo[];
+  devices: string[];
+  scans: Record<string, { scanned_at: string; size: number | null; files: number | null; folders: number | null }>;
+  scanning: { drive: string; files: number; started_at: string } | null;
+}
+
+/** One folder in a scan: name, size, size on disk, files, folders, modified (unix s), inaccessible, children. */
+export interface ScanNode {
+  n: string;
+  s: number;
+  a: number;
+  f: number;
+  d: number;
+  m: number;
+  x?: boolean;
+  c?: ScanNode[];
+}
+
+export interface ScanResult {
+  letter: string;
+  scanned_at: string;
+  scan: {
+    root: string;
+    tree: ScanNode;
+    largest: { p: string; s: number; m: number }[];
+    by_type: Record<string, { s: number; f: number }>;
+    inaccessible: number;
+  };
+  previous_scanned_at: string | null;
+  changes: { path: string; size: number; previous: number | null }[];
+}
+
 export interface InviteInfo {
   email: string;
   invited_by: string | null;
@@ -178,6 +325,8 @@ export interface Device {
   mode: DeviceMode;
   /** The agent version the server ships, when the PC still runs another one. */
   agent_update_available: string | null;
+  /** Security tab summary (roadmap #23); null before the PC's first report. */
+  security: SecuritySummary | null;
 }
 
 export interface EnrollmentCode {
@@ -203,6 +352,12 @@ export interface DeviceSettings {
   silent_alert_minutes: number;
   show_window_titles: boolean;
   auto_update: boolean;
+  scan_every_days: number;
+  updates_mode: "install" | "report";
+  feature_updates: boolean;
+  restart_for_updates: boolean;
+  weekly_full_scan: boolean;
+  block_pause_updates: boolean;
   updated_at: string;
 }
 
@@ -431,6 +586,22 @@ export const api = {
     request<DeviceCommand[]>("GET", `/devices/${encodeURIComponent(id)}/commands${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
   command: (id: string, commandId: string) =>
     request<DeviceCommand>("GET", `/devices/${encodeURIComponent(id)}/commands/${encodeURIComponent(commandId)}`),
+
+  appCatalog: () => request<AppCatalog>("GET", "/apps/catalog"),
+  addCustomApp: (body: { name: string; category: string; exe?: string; product?: string; path?: string }) =>
+    request<CatalogApp>("POST", "/apps/custom", body),
+  removeCustomApp: (id: string) => request<void>("DELETE", `/apps/custom/${encodeURIComponent(id.replace(/^custom:/, ""))}`),
+  appRules: (id: string) => request<AppRule[]>("GET", `/devices/${encodeURIComponent(id)}/app-rules`),
+  putAppRules: (id: string, rules: AppRuleIn[]) => request<AppRule[]>("PUT", `/devices/${encodeURIComponent(id)}/app-rules`, { rules }),
+  usage: (id: string, days = 7) => request<UsageDay[]>("GET", `/devices/${encodeURIComponent(id)}/usage?days=${days}`),
+  seenApps: (id: string) => request<SeenApp[]>("GET", `/devices/${encodeURIComponent(id)}/apps/seen`),
+
+  drives: (id: string) => request<DrivesReport>("GET", `/devices/${encodeURIComponent(id)}/drives`),
+  scan: (id: string, letter: string) => request<ScanResult>("GET", `/devices/${encodeURIComponent(id)}/scans/${letter}`),
+  startScan: (id: string, letter: string) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/scans/${letter}`),
+  security: (id: string) => request<SecurityState>("GET", `/devices/${encodeURIComponent(id)}/security`),
+  securityAction: (id: string, action: SecurityAction) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/security/${action}`),
+  listFolder: (id: string, path: string) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/files/list`, { path }),
 
   devices: () => request<Device[]>("GET", "/devices"),
   device: (id: string) => request<Device>("GET", d(id)),

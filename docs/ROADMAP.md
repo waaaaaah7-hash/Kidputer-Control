@@ -1,6 +1,6 @@
 # Kidputer Control — Roadmap
 
-This is the plan after version 1.0.0. Version 1.1.0 is built (everything in the 1.1 row below). It includes the features already on record (app and process
+This is the plan after version 1.0.0. Versions 1.1.0, 1.2.0 and 1.3.0 are built (everything in the 1.1, 1.2 and 1.3 rows below). It includes the features already on record (app and process
 management, usage quotas, weekly reports, bonus time), the Managed and Trusted modes with change
 notifications, and further suggestions. Each one is rated for effort, feasibility, and
 practicality.
@@ -17,9 +17,9 @@ practicality.
 | 0 | Verify 1.0 on a real Windows PC | Prerequisite | S (parent's time + fixes) | High | Essential |
 | 1 | See running apps and processes **(done)** | Requested | M | High | High |
 | 2 | Stop a running app remotely **(done)** | Requested | M | High | High |
-| 3 | Schedule availability of common apps | Requested | L | High, with caveats | High |
-| 4 | Add custom apps | Requested | S (on top of #3) | High | High |
-| 5 | Per-app usage time | Suggested (feeds #6–7) | M | High | High |
+| 3 | Schedule availability of common apps **(done)** | Requested | L | High, with caveats | High |
+| 4 | Add custom apps **(done)** | Requested | S (on top of #3) | High | High |
+| 5 | Per-app usage time **(done)** | Suggested (feeds #6–7) | M | High | High |
 | 6 | Daily screen-time quotas | Original roadmap | M | High | High |
 | 7 | Weekly reports (email) | Original roadmap | M | High | Medium |
 | 8 | Bonus time (time bank) | Original roadmap | S | High | Low: extra time already covers most of it |
@@ -31,12 +31,13 @@ practicality.
 | 14 | Several children on one PC | Suggested | M | High | Depends on the household |
 | 15 | Web/site filtering | Often expected | L | Low | Better handled outside the app |
 | 16 | Managed and Trusted modes, chosen in the installer **(done)** | Requested | S | High | High |
-| 17 | Change monitoring: installs, first-run programs, archives, accounts, and more | Requested | M–L | High (archive "access": medium) | High |
+| 17 | Change monitoring: installs, first-run programs, archives, accounts, and more **(done)** | Requested | M–L | High (archive "access": medium) | High |
 | 18 | Install requests approved by a parent (Managed mode) | Requested | L | High for silent installs | High |
-| 19 | Drives, file explorer, and folder-size analysis (like TreeSize) | Requested | L | High | High |
+| 19 | Drives, file explorer, and folder-size analysis (like TreeSize) **(done)** | Requested | L | High | High |
 | 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
 | 21 | Remember this device, with a signed-in devices page and re-checks for risky actions **(done)** | Requested | S | High | High |
 | 22 | Several parents: invite by link, remove, and names in the activity log **(done)** | Requested | S | High | High |
+| 23 | Security tab: virus protection (Defender scans and threats) and Windows updates **(done)** | Requested | M–L | High (Defender as the antivirus) | High |
 
 ## Release plan
 
@@ -44,8 +45,9 @@ practicality.
 |---|---|
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
 | **1.1 (done)** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
-| **1.2** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
-| **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
+| **1.2 (done)** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
+| **1.3 (done)** | The dashboard redesign (a phone-first home page and one page per PC). Security tab: virus protection and Windows updates (#23). Narrated video guides. |
+| **1.4** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
 #20, #21 and #22 change only the server and dashboard, not the PC agent, so they can ship ahead of the
@@ -87,7 +89,7 @@ more on them.
   stopped from the dashboard.
 - Every stop is recorded in the activity log.
 
-## 3. Schedule availability of common apps — L
+## 3. Schedule availability of common apps — L — done
 
 **Rules**
 - Rules apply to an app or a category, per weekday.
@@ -128,14 +130,14 @@ PC):
 - A determined, technical teenager will find gaps. The aim is to stop casual use reliably, not
   every possible attempt.
 
-## 4. Add custom apps — S (once #3 exists)
+## 4. Add custom apps — S — done
 
 - **Main route:** pick from **"Apps seen on this PC"**, built from the process list in #1. The
   parent clicks "Add rule" next to something the child has been running; no file paths needed.
 - **Fallback:** enter an exe name or path by hand.
 - Custom apps can go into the parent's own categories, for example "Homework apps".
 
-## 5. Per-app usage time — M
+## 5. Per-app usage time — M — done
 
 - A natural by-product of #1 and #3. It's also the data that makes #6 and #7 worthwhile.
 - The UI agent runs in the child's session, so it can tell which app is in front and whether the
@@ -260,7 +262,7 @@ The installer, and the dashboard's download dialog, ask which mode the PC uses.
 | Change the clock | Clock warning, but only while online |
 | Create a second, unmonitored Windows account | New-account alert (#17) |
 
-## 17. Change monitoring — M–L
+## 17. Change monitoring — M–L — done
 
 These events feed the notifications in #10. Most are useful in both modes; some matter mainly in
 Trusted mode.
@@ -316,7 +318,7 @@ silently, without a window:
 
 Every request and approval is recorded in the activity log.
 
-## 19. Drives, file explorer, and folder-size analysis — L
+## 19. Drives, file explorer, and folder-size analysis — L — done
 
 A **Files** tab on the device page. It shows **names, sizes, and dates only**: opening, previewing,
 or downloading files is deliberately out of scope, for privacy, and because it would turn the
@@ -444,3 +446,56 @@ Both parents can manage the same PCs, each with their own sign-in.
 - **Who did what:** activity entries for parent actions show the parent's name.
 - Every parent sees and controls every PC. Per-parent permissions (for example, a grandparent
   who can only add extra time) could come later if needed.
+
+## 23. Security tab: virus protection and Windows updates — M–L — done
+
+Released in 1.3.0. Like the other Windows-only parts it still needs checking on a real PC
+(checklist items 21–23 in `agent/README.md`).
+
+
+A **Security** tab on each PC's page, with virus protection and Windows updates side by side. Each
+PC's card on the home page gets one line: "Protected and up to date", or what needs attention.
+
+**Virus protection (Microsoft Defender)**
+- **Status:** real-time protection on or off, tamper protection, how old the virus definitions
+  are, and when the last quick and full scans ran.
+- **Threats found:** name, severity, when, which file, and what Defender did (quarantined,
+  removed, allowed, or still needs action).
+- **Buttons:** quick scan, full scan, update virus definitions, and remove threats.
+- **Weekly full scan** at bedtime, if wanted (on by default).
+- **Alerts:** a threat found (critical, right away), a threat that couldn't be removed, virus
+  definitions more than three days old, and no virus scan for two weeks. Defender being switched off was already covered by #17.
+- **Other antivirus programs:** if Norton, McAfee and so on replace Defender, the tab shows which
+  one is installed and whether Windows reports it as on and up to date; its scans can't be shown or
+  started.
+
+**Windows updates**
+- **Status:** the Windows version and build, updates waiting (with their type: security, monthly,
+  feature upgrade, driver), whether a restart is needed, when updates were last checked and
+  installed, and whether updates are paused or Windows Update is switched off.
+- **Install automatically** (default) or only report. Monthly and security updates by default; the
+  big yearly Windows upgrades only if ticked. Not on battery below 50%, or on a metered connection
+  such as mobile data.
+- **Pausing:** on Pro, Education and Enterprise, the "Pause updates" button is hidden from the
+  child (on by default). Windows Home doesn't allow that, so pausing raises an alert instead.
+- **Restart at bedtime:** when an update needs a restart, the PC restarts once the bedtime lock has
+  been on for 20 minutes, so it never interrupts the child. A PC that's off every night restarts at
+  the next bedtime it's on for.
+- **Buttons:** check now, and install now.
+- **Alerts:** an update failed, a restart has been waiting for three days, and updates paused or
+  Windows Update switched off.
+
+**How it works**
+- The watchdog (SYSTEM) reads Defender's status with `Get-MpComputerStatus` and its history with
+  `Get-MpThreatDetection`, and Windows Update through its built-in programming interface
+  (`Microsoft.Update.Session`), on every Windows 10 and 11 edition.
+- Anything slow (a scan, a search for updates, an install) runs in a separate low-priority process,
+  one at a time, like the folder-size scans, so enforcement never waits.
+- Results go up as one "security" report; buttons are dashboard commands, as for closing apps.
+
+| Part | Effort | Feasibility | Practicality |
+|---|---|---|---|
+| Defender status, threats, scans, alerts | S–M | High while Defender is the antivirus | High |
+| Windows Update status, install, alerts | M | High; installs can fail for reasons outside our control | High |
+| Restart at bedtime | S | High | High: the step that most often gets stuck |
+| Hiding Windows' "Pause updates" button | S | Pro, Education and Enterprise only; on Home, pausing raises an alert instead | Medium |

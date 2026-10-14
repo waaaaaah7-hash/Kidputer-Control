@@ -11,7 +11,7 @@ from .bootstrap import bootstrap_admin
 from .config import get_settings
 from .deps import CSRF_HEADER
 from .jobs import start_background_jobs
-from .routers import agent, apps, auth, devices, notifications, parents, passkeys
+from .routers import agent, app_rules, apps, auth, devices, files, notifications, parents, passkeys, security
 
 settings = get_settings()
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -26,7 +26,7 @@ async def lifespan(_: FastAPI):
         stop.set()
 
 
-app = FastAPI(title="Kidputer Control API", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Kidputer Control API", version="1.3.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 if _origins:
@@ -67,6 +67,9 @@ app.include_router(parents.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(apps.router, prefix="/api/v1")
+app.include_router(app_rules.router, prefix="/api/v1")
+app.include_router(files.router, prefix="/api/v1")
+app.include_router(security.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")
 
 

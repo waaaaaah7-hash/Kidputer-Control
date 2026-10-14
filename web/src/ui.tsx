@@ -88,7 +88,7 @@ export const useToast = () => useContext(ToastContext);
 
 // --- Components -----------------------------------------------------------------------------------
 
-type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "ghost";
 
 /**
  * Button that runs an async action, shows a busy state, and reports failures as a toast.

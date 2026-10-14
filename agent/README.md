@@ -73,7 +73,7 @@ Then delete the device in the dashboard.
 | Path | ACL | Contents |
 |---|---|---|
 | `%ProgramFiles%\KidputerControl\` | Users: read/execute | The scripts. Their SHA-256 hashes are checked every minute. |
-| `%ProgramData%\KidputerControl\config\` | SYSTEM + Administrators | `agent.json`, `device.token` (DPAPI), `state.json` (cached config, including the PIN hash), `local.json`, `queue.jsonl` (events not yet uploaded), `manifest.json` |
+| `%ProgramData%\KidputerControl\config\` | SYSTEM + Administrators | `agent.json`, `device.token` (DPAPI), `state.json` (cached config, including the PIN hash), `local.json`, `queue.jsonl` (events not yet uploaded), `manifest.json`, `scans\`, `security\` (Security tab: what's been seen and the last job results) |
 | `%ProgramData%\KidputerControl\logs\` | SYSTEM + Administrators | `agent-YYYY-MM.log`, one file per month, 12 months kept |
 | `%ProgramData%\KidputerControl\ipc\ui-state.json` | Users: read | What the UI should show. Written only by the watchdog. |
 | `%ProgramData%\KidputerControl\ipc\inbox\` | Users: create files only | Requests from the UI agent. The watchdog validates each one, then deletes it. |
@@ -153,6 +153,42 @@ a short schedule window, or an immediate lock, set from the dashboard.
     next check-in (a failed attempt is retried after an hour). The log shows "Kidputer Control updated from ... to ...",
     the device page shows the new agent version, and no tamper alert follows. Turning
     auto-update off on the device page stops this.
+17. **Change monitoring** (after the first two days, which only learn what's normal):
+    - Install a small program (machine-wide, and one just for the child): "App installed"
+      appears within a minute; uninstall it: "App removed".
+    - Unzip and run a portable program, or run one straight from a zip: "New program run",
+      saying it came from an archive.
+    - Save a .zip into the child's Downloads: "New archive file" within 5 minutes.
+    - Plug in a USB stick: "USB drive connected", with a count of programs and archives on it.
+    - Create a Windows account, or make one an administrator: an account alert within 2 minutes.
+    - Turn off Defender's real-time protection: "Virus protection switched off" within 5 minutes.
+18. **App rules:** on the App rules tab, block Notepad++ or another non-Windows app (add it under
+    "An app that isn't listed..."). Opening it closes it within about a second, and a box says
+    it isn't allowed. Then give a category a schedule that ends in a couple of minutes, with one of
+    its apps open: when the time ends, a countdown appears before it closes. Rename a blocked
+    program's .exe: it's still recognised.
+19. **Usage:** use a couple of apps for a few minutes each, leave the PC idle for 5 minutes, then
+    check the Usage tab (it updates every 5 minutes): the apps appear, and the idle time isn't
+    counted.
+20. **Files:** on the Files tab, click **Scan for folder sizes** on C:. Task Manager shows a
+    low-priority PowerShell process for a few minutes; games stay smooth. When it's done, folder
+    sizes appear; click into Users and use **Show what's in this folder now**. Plug in a USB stick:
+    it appears in the drive list.
+21. **Virus protection:** open the Security tab: Defender shows as on, with recent definitions.
+    Click **Quick scan**: the tab says it's running, and "Virus scan finished" appears in the log
+    within about 15 minutes. Download the harmless EICAR test file
+    (<https://www.eicar.org/download-anti-malware-testfile/>): a critical "Threat found" alert
+    arrives, and the threat is listed as quarantined or removed.
+22. **Windows updates:** the tab shows the Windows version, and within a few minutes of the agent
+    starting, when updates were last checked. Click **Check now**, then **Install now** if anything
+    is waiting: "Windows updates installed" appears in the log. On Windows Pro, the "Pause
+    updates" button in Windows Settings is gone within 30 minutes (and the tab shows "Pausing
+    updates: Blocked"); on Home, pause updates there: a "Windows updates paused" alert arrives
+    within 30 minutes. On a laptop on a phone hotspot set as metered, waiting updates show "Waiting
+    to install until the PC is off a metered connection".
+23. **Restart at bedtime:** with an update waiting for a restart, set the bedtime lock a few
+    minutes away. The countdown says the PC restarts tonight; 20 minutes after it locks, the PC
+    restarts (with a 2-minute Windows notice), and the log shows "Restarting for updates".
 
 ## Tests
 
@@ -161,6 +197,9 @@ a short schedule window, or an immediate lock, set from the dashboard.
 .\tests\Common.Tests.ps1    # decision logic, countdown, PIN and lockout, queue, inbox, tamper, install modes
 .\tests\Apps.Tests.ps1      # running apps: which processes may be closed, the process report
 .\tests\Update.Tests.ps1    # auto-update: fingerprints, install, rollback
+.\tests\Monitor.Tests.ps1   # change monitoring: installs, first runs, archives, accounts, USB, VPNs
+.\tests\Files.Tests.ps1     # drives, folder listing, when scans are due
+.\tests\Scanner.Tests.ps1   # the folder-size scanner and Scan.ps1
 ```
 
 Both run on Windows PowerShell 5.1 and on PowerShell 7 (Windows CI runs both).

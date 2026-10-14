@@ -32,6 +32,7 @@ App and process management is planned for a future version. That is why the prod
 | 3. SYSTEM watchdog + launching the UI into the child's session | **Done** (`agent/KidputerControl/Watchdog.ps1`, `UiAgent.ps1`, `Install.ps1`). See the verification note below. |
 | 4. Web dashboard | **Done** (`web/`: React + TypeScript + Vite, served by FastAPI). Deploys to Render: see `docs/DEPLOY-RENDER.md`. |
 | 1.1: modes, notifications, running apps, auto-update | **Done**. See the sections below. |
+| 1.2: change monitoring, app rules and usage, files | **Done**. See the sections below. |
 
 **Verification:**
 - The API has full test coverage against Postgres.
@@ -150,6 +151,7 @@ A 4–10 digit PIN is brute-forceable by anyone who can read the hash. So:
 | parent invites | `admin_invites` | One-time sign-up links: token hash, expiry, accepted or cancelled time. |
 | notifications | `notification_settings`, `push_subscriptions`, `notifications`, `app_secrets` | Each parent's levels, quiet hours and digest time; their phones and browsers; the send queue (kept 30 days); the Web Push key. |
 | commands and reports | `device_commands`, `device_reports` | Parent-to-PC commands with their results; the latest bulk report per kind. |
+| app rules and usage | `custom_apps`, `app_rules`, `usage_daily` | The parents' own apps; per-PC rules per app or category; seconds per app per local day (`_total` = all screen time). |
 | — | `devices.mode`, `.silent_since`, `.last_silence_started`, `.live_until`; `device_settings.silent_alert_minutes`, `.show_window_titles`, `.auto_update` | Modes, "PC went silent", live mode, and per-PC options. |
 
 Migrations live in `server/migrations` (Alembic). CI runs `alembic check` to catch drift between
@@ -165,7 +167,7 @@ All endpoints are under `/api/v1/agent`. Every call except `enroll` needs the de
 | `GET /state` (send `If-None-Match`) | Full desired-state snapshot, or `304`. The `ETag` is a hash of the snapshot. `X-Server-Time` lets the agent detect clock skew. |
 | `POST /events` `{events:[…≤500]}` | Flush the local event queue. Returns `{accepted, duplicates}`. Safe to retry. |
 | `POST /heartbeat` `{agent_version, status:{…}}` | Free-form live status shown in the dashboard, for example `locked`, `ui_agent_alive`, `child_is_admin` or `agent_bundle`. |
-| `POST /reports/{kind}` | The latest copy of a bulk report (`processes`). Size-capped per kind. |
+| `POST /reports/{kind}` | The latest copy of a bulk report (`processes`, `usage`, `drives`, `security`, `scan:C`). Size-capped per kind. |
 | `POST /commands/{id}/result` `{status, result}` | Outcome of a dashboard command. Retries are ignored once recorded. |
 | `GET /update/manifest`, `GET /update/file?path=` | Auto-update: the agent files this server ships, with SHA-256s, and each file. |
 
@@ -275,6 +277,116 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
   wasn't: a critical `device.agent_was_stopped`. A watchdog that was only asleep reports
   `pc.resumed` instead, which clears it.
 
+## App rules (#3, #4) and usage time (#5)
+
+- **Catalogue** (`server/app/catalog.py`): common apps in four categories, each with matchers. A
+  matcher's fields must all match: `exe` (the file name *or* the original file name stored in the
+  program, so renamed copies still match), and text in the `product`, `company`, `path` or
+  `cmdline` (Minecraft Java runs on a generic `javaw.exe`). Parents' own apps (`custom_apps`) use
+  the same shape, are shared by every PC, and are checked first.
+- **Rules** (`app_rules`): per PC, per app or category: `allow`, `block`, or `schedule` with
+  weekly windows in the PC's time zone. The snapshot carries the catalogue and the rules (an app's
+  own rule first, so it beats its category's), with allowed times expanded into UTC instants for
+  14 days, like bedtime. Offline for longer, the agent falls back to the weekly times.
+- **Enforcement** (watchdog, every second): processes in the child's session are matched; one
+  outside its allowed time that has just started is closed at once, with a notice on screen
+  saying when it's available (`app.blocked`, at most every 10 minutes per app). One that was
+  allowed when it started gets the same countdown as a parent's Close (`app.time_up`).
+- **Usage:** the UI agent samples the foreground window every 5 seconds, skipping idle time
+  (2 minutes without input) and the lock screen, and sends a minute's totals through the inbox.
+  The watchdog caps and attributes them to apps, keeps per-day running totals in
+  `config\usage.json`, and reports them (`POST /reports/usage`, every 5 minutes, 30 s while live).
+  Days are the PC's time zone, from the snapshot's `day_starts`. The `_total` key is all screen
+  time. Usage comes from the child's own session, so a determined child could under-report it;
+  it's for insight, not enforcement.
+
+## Drives, folder sizes and the file explorer (#19)
+
+- **Drives** (`POST /reports/drives`): every ready drive with size and free space, and phones or
+  cameras connected by USB (by name). Sent when the list changes, at least every 10 minutes (every
+  minute while live).
+- **Scans:** `KidputerControl.Scanner.cs`, run by `Scan.ps1` in a separate process in Windows'
+  background mode (lowest CPU and disk priority). It walks the drive with `FindFirstFileEx`
+  (basic info, large fetch, `\\?\` long paths), never follows junctions or symlinks, counts
+  OneDrive online-only files as size but not size on disk, and writes its own JSON: a folder tree
+  (name, size, size on disk, files, folders, newest date, unreadable flag) where folders below the
+  top two levels that are under 0.2% of the used space (at least 50 MB) are folded into their
+  parent, the 100 largest files, and space by type. Off Windows it lists folders with .NET, which
+  is what the tests use.
+- **When:** on a parent's request (`scan_drive` command), and every `scan_every_days` (default 7)
+  for fixed drives, preferably while the child isn't signed in or the PC is locked. One at a time;
+  stopped after 2 hours. Progress shows in the heartbeat (`scan`).
+- **Server:** `POST /reports/scan:C` keeps the previous scan as `scan_prev:C`. "What changed"
+  compares the two trees: folders that grew by 50 MB or more, or appeared, leaving out a folder
+  when 75%+ of its growth is explained by a listed folder inside it.
+- **Live listing:** a `list_folder` command returns one folder's entries (name, folder or file,
+  size, modified, hidden, link), at most 3,000, for a full local path only.
+- **Never:** reading, previewing or downloading a file's contents. This is deliberate.
+
+## Security tab: virus protection and Windows updates (#23)
+
+- **Readings** (in the watchdog, every 30 minutes, every minute while live):
+  `KidputerControl.Security.psm1` reads Defender with `Get-MpComputerStatus`,
+  `Get-MpThreatDetection` and `Get-MpThreat`, other antivirus programs from Security Center
+  (`root/SecurityCenter2`), and Windows Update's quick facts: restart needed
+  (`Microsoft.Update.SystemInfo`), paused (`PauseUpdatesExpiryTime`), the `wuauserv` service
+  disabled, and the last search and install (`Microsoft.Update.AutoUpdate`).
+- **Jobs:** anything slow runs in `Security.ps1`, a separate below-normal-priority process, one at
+  a time from a queue, each with a time limit: `quick_scan`, `full_scan` (`Start-MpScan`),
+  `update_signatures`, `remove_threats`, `check_updates` (searching `Microsoft.Update.Session`)
+  and `install_updates` (download and install; never drivers, feature upgrades only if
+  `feature_updates`, nothing that asks the user questions). Jobs come from the dashboard
+  (`security` commands with an `action`) or from the watchdog: a check twice a day, an install
+  when routine updates are waiting (at most every 6 hours, not on battery below 50% or on a
+  metered connection, unless `updates_mode` is `report`; the report's `install_waiting` says
+  which), a definitions update when they're 3 days old, and a full scan once a week after 20
+  minutes of the bedtime lock (`weekly_full_scan`; when that's off, a quick scan if nothing has
+  scanned for a week).
+- **Pausing updates:** with `block_pause_updates`, the watchdog sets the
+  `SetDisablePauseUXAccess` policy, which hides "Pause updates" in Windows Settings on Pro,
+  Education and Enterprise (EditionID not `Core*`); it removes the value again if the setting is
+  turned off. Home ignores the policy, so there the `windows_update.paused` alert is the safety
+  net. The report's `pause_blocking` is `on`, `off` or `unsupported`.
+- **Restart at bedtime:** when a restart is needed and `restart_for_updates` is on, the watchdog
+  runs `shutdown /r /t 120` once the scheduled lock has been on for 20 minutes, at most once in 12
+  hours and never during an install. While a restart is due, ui-state's `restart_tonight` makes the
+  countdown say so.
+- **Report:** `POST /reports/security` (Defender, updates, the running job and the queue), sent
+  when something changes and every 6 hours. What it remembers (threats already seen, the last
+  check and install, alert times) lives in `config\security\state.json`.
+- **Events:** `defender.threat_found` (critical; the first reading only learns what's there),
+  `defender.scan_finished`/`scan_failed`, `defender.signatures_old`, `defender.scan_overdue` (no
+  scan for 14 days, at most weekly), `defender.threats_removed`/
+  `remove_failed`, `windows_update.installed`/`failed`/`restart_pending`/`restarting`/`paused`/
+  `disabled`.
+- **Server:** `GET /devices/{id}/security` (report, summary, recent requests) and
+  `POST /devices/{id}/security/{action}`. `pc_security.summary` turns the report into the one-line
+  status shown on the PC's card (`DeviceOut.security`). Settings: `updates_mode`,
+  `feature_updates`, `restart_for_updates`, `weekly_full_scan`, `block_pause_updates`.
+
+## Change monitoring (#17)
+
+`KidputerControl.Monitor.psm1`, run from the watchdog, each check on its own timer. What it
+remembers lives in the SYSTEM-only `config\monitor.json`; the first sighting of each list is a
+baseline, not a change.
+
+| Check | Every | Events |
+|---|---|---|
+| New processes in the child's session | 2 s | `program.first_run` (with where it ran from: straight out of an archive, a USB drive, Downloads, temp), `archive.opened` for 7-Zip/WinRAR/PeaZip/Bandizip |
+| Removable drives | 10 s | `usb.connected`, with a count of programs and archives in the top two folder levels |
+| Installed programs (uninstall registry: machine, 32-bit, and the child's own while signed in) | 1 min | `software.installed`, `software.uninstalled` |
+| Store apps for the child | 10 min | same |
+| Local accounts and the Administrators group | 2 min | `account.created`, `.deleted`, `.admin_added`, `.admin_removed` |
+| Defender real-time protection | 5 min | `defender.disabled`, `defender.enabled` |
+| Archives in Downloads, Desktop, Documents; Recent Items | 5 min | `archive.new`, `archive.opened` |
+
+- **First runs** key on the program's path with version-numbered folders made generic, so app
+  updates aren't "new". For the first 48 hours after monitoring starts, programs are learned
+  quietly. Memory is capped at 5,000 programs.
+- **VPN and remote-access apps** are recognised by name or publisher, on install or first run, and
+  also raise `software.vpn_detected`.
+- Archive *contents* are never read: only names, sizes and where things ran from.
+
 ## Managed and Trusted modes (#16)
 
 `devices.mode` is `managed` (standard child account) or `trusted` (administrator child account).
@@ -344,7 +456,13 @@ accepts one. The watchdog reports `child_is_admin` every 10 minutes and only rai
   the same origin as the API:
   - The SameSite=Strict session cookie works without CORS.
   - The API sends a strict Content-Security-Policy for the app: `'self'` only, no inline scripts.
-  - Its only runtime dependencies are React, React Router, and `qrcode` (for the 2FA QR code).
+  - Its only runtime dependencies are React, React Router, `qrcode` (for the 2FA QR code), and the
+    Figtree font, bundled from `@fontsource-variable/figtree` so no font is loaded from elsewhere.
+  - Layout: from 900 px wide, a sidebar with the main links and the PCs; below that, a slim top
+    bar and a fixed menu bar along the bottom. A PC's page has its sections as tabs (Overview,
+    Apps, App rules, Usage, Files, Schedule and settings).
+  - The countdown to bedtime and the hour-by-hour bar are worked out in the browser from the PC's
+    schedule and time zone (`web/src/bedtime.ts`), so they need no extra API.
 - **First admin:** Render's free tier has no shell, so the first admin is created at start-up from
   `KC_BOOTSTRAP_ADMIN_EMAIL`/`KC_BOOTSTRAP_ADMIN_PASSWORD`, and only while no admin exists.
 

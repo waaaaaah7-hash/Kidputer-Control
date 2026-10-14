@@ -101,6 +101,18 @@ Test 'auto-update downloads the server''s agent, verifies it, and installs it' {
     Assert-True $threw 'mismatched bundle refused'
 }
 
+Test 'a folder-size scan runs in its own process and uploads' {
+    $scanRoot = Join-Path $tmp 'scanme'
+    New-Item -ItemType Directory -Path (Join-Path $scanRoot 'Games') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $scanRoot 'Games/big.pak'), (New-Object byte[] 4096))
+    $out = Join-Path $tmp 'C.json'
+    $ps = (Get-Process -Id $PID).Path
+    & $ps -NoProfile -File (Join-Path $PSScriptRoot '..\KidputerControl\Scan.ps1') -Root $scanRoot -OutFile $out -MinNodeBytes 1
+    Assert-Equal 0 $LASTEXITCODE
+    $r = Invoke-KcApi -BaseUrl $api -Method POST -Path '/api/v1/agent/reports/scan:C' -Token $script:token -Body ([IO.File]::ReadAllText($out))
+    Assert-Equal 204 $r.Status
+}
+
 Test 'offline API is reported, not thrown' {
     $r = Sync-KcState -BaseUrl 'http://127.0.0.1:9' -Token $script:token -CachedState $script:state
     Assert-Equal $true $r.Offline

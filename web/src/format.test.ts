@@ -1,5 +1,5 @@
 import type { Device } from "./api";
-import { authMethodLabel, describeUserAgent, deviceStatus, describeWindow, relativeTime, toEntries, toRows } from "./format";
+import { authMethodLabel, describeUserAgent, deviceStatus, describeWindow, formatBytes, relativeTime, toEntries, toRows } from "./format";
 
 const NOW = Date.parse("2026-01-12T22:00:00Z");
 
@@ -16,6 +16,7 @@ function device(overrides: Partial<Device> = {}): Device {
     created_at: "2026-01-01T00:00:00Z",
     mode: "managed",
     agent_update_available: null,
+    security: null,
     ...overrides,
   };
 }
@@ -93,5 +94,15 @@ describe("describeUserAgent", () => {
     expect(authMethodLabel("passkey")).toBe("Passkey");
     expect(authMethodLabel("password_remembered")).toBe("Password, remembered device");
     expect(authMethodLabel(null)).toBe("Signed in");
+  });
+});
+
+describe("formatBytes", () => {
+  it("uses the biggest sensible unit", () => {
+    expect(formatBytes(0)).toBe("0 bytes");
+    expect(formatBytes(1536)).toBe("1.5 KB");
+    expect(formatBytes(340 * 1024 * 1024)).toBe("340 MB");
+    expect(formatBytes(1.25 * 1024 ** 3)).toBe("1.3 GB");
+    expect(formatBytes(2 * 1024 ** 4)).toBe("2 TB");
   });
 });

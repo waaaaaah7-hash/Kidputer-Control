@@ -6,7 +6,7 @@ Parental control for Windows PCs. It has three parts:
 - A PowerShell agent on the child's PC (`agent/`): a SYSTEM watchdog plus a UI agent in the
   child's session.
 
-Version 1.1.0. Read `docs/ARCHITECTURE.md` for the design, and `docs/ROADMAP.md` for what's
+Version 1.3.0. Read `docs/ARCHITECTURE.md` for the design, and `docs/ROADMAP.md` for what's
 planned. The README is the user-facing overview.
 
 ## Workflow
@@ -87,6 +87,11 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
   call in `useReauth()`.
 - Test that layouts work at phone width (390px). The browser test checks for content overflowing
   its card.
+- Layout: a sidebar from 900px wide, and below that a top bar plus a fixed bottom menu bar. Both
+  carry a `nav` named "Main"; only one is visible at a time, so tests can use
+  `get_by_role("navigation", name="Main")` at any width.
+- Colours are CSS variables at the top of `styles.css` (warm light and dark themes). Use them
+  rather than new hex values.
 
 **Security posture**
 - The PIN hash and the device token live only in the SYSTEM-only config folder.
@@ -107,6 +112,11 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
 - Several parents: invite by one-time link, remove, and names in the activity log.
 - 1.1: Managed and Trusted modes, notifications (email, Web Push, "PC went silent"), running apps
   and closing them, and agent auto-update.
+- 1.2: change monitoring, app rules with a catalogue and custom apps, usage time, and the Files
+  tab (drives, folder-size scans, live folder listing).
+- 1.3: the dashboard redesign (warm look, phone-first home page, one page per PC), the Security
+  tab (#23: Defender status, threats and scans; Windows updates installed automatically, with
+  restarts at bedtime), and narrated video guides (`docs/VIDEOS.md`).
 
 **Not yet verified on real hardware**
 - Everything Windows-only: the WinForms lock screen, `CreateProcessAsUser`, the scheduled task,
@@ -117,4 +127,5 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
 
 **Next:** see the release plan in `docs/ROADMAP.md`:
 - 1.0.x: real-PC verification (now including the 1.1 checklist items).
-- 1.2: change monitoring, drives and file explorer, app schedules and custom apps, usage time.
+- 1.4: install requests (Managed mode), daily limits, "ask for more time", schedule templates
+  and holidays.

@@ -68,5 +68,7 @@ def test_agent_module_against_live_api(live_server):
         assert admin.get(f"/api/v1/devices/{dev}/commands/{stop['id']}").json()["status"] == "done"
         procs = admin.get(f"/api/v1/devices/{dev}/processes").json()["processes"]
         assert [(p["pid"], p["company"]) for p in procs] == [(4242, "Mojang")]
+        scan = admin.get(f"/api/v1/devices/{dev}/scans/C").json()["scan"]
+        assert scan["tree"]["s"] == 4096 and scan["tree"]["c"][0]["n"] == "Games"
         device = admin.get(f"/api/v1/devices/{dev}").json()
         assert device["enrolled"] and device["last_status"]["ui_agent_alive"] is True

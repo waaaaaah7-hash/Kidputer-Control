@@ -221,6 +221,18 @@ class DeviceSettings(Base):
     show_window_titles: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     # Install new agent versions automatically when the server has them.
     auto_update: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # Scan the PC's drives for folder sizes this often (days); 0 = only when a parent asks.
+    scan_every_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("7"))
+    # Security tab (roadmap #23). 'install': install Windows updates automatically; 'report': only show them.
+    updates_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'install'"))
+    # Also install the big yearly Windows upgrades (feature updates).
+    feature_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Restart at bedtime when an update needs it.
+    restart_for_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # A full virus scan once a week, at bedtime.
+    weekly_full_scan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # Hide Windows' "Pause updates" button (honoured on Pro, Education and Enterprise; Home ignores it).
+    block_pause_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     device: Mapped[Device] = relationship(back_populates="settings")
@@ -231,6 +243,8 @@ class DeviceSettings(Base):
         CheckConstraint("pin_max_attempts BETWEEN 1 AND 20", name="ck_settings_pin_attempts"),
         CheckConstraint("pin_override_minutes BETWEEN 1 AND 1440", name="ck_settings_pin_override"),
         CheckConstraint("silent_alert_minutes BETWEEN 0 AND 1440", name="ck_settings_silent_alert"),
+        CheckConstraint("scan_every_days BETWEEN 0 AND 90", name="ck_settings_scan_every"),
+        CheckConstraint("updates_mode IN ('install', 'report')", name="ck_settings_updates_mode"),
     )
 
 
@@ -294,7 +308,7 @@ class Message(Base):
     __table_args__ = (
         CheckConstraint("mode IN ('persistent', 'closable')", name="ck_messages_mode"),
         CheckConstraint("char_length(body) BETWEEN 1 AND 2000", name="ck_messages_body"),
-        # At most one live message per device, (a new message replaces the current one).
+        # At most one live message per device: a new message replaces the current one.
         Index(
             "uq_messages_one_active",
             "device_id",
@@ -450,3 +464,56 @@ class DeviceReport(Base):
     kind: Mapped[str] = mapped_column(String(32), primary_key=True)
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CustomApp(Base):
+    """An app the parents added themselves (roadmap #4), shared by every PC in the household."""
+
+    __tablename__ = "custom_apps"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # One of the catalogue's categories, or the parents' own ("Homework apps").
+    category: Mapped[str] = mapped_column(String(60), nullable=False)
+    # Same shape as the catalogue's matchers: [{"exe": "...", "product": "..."}, ...]
+    matchers: Mapped[list] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+
+
+class AppRule(Base):
+    """When an app or a whole category may be used on one PC (roadmap #3)."""
+
+    __tablename__ = "app_rules"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    # 'app' (a catalogue id or "custom:<uuid>") or 'category'
+    target_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    target: Mapped[str] = mapped_column(String(80), nullable=False)
+    # 'allow' (any time), 'block' (never), 'schedule' (only inside `windows`)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    # [{"day": 0-6 (Monday = 0), "start": "16:00", "end": "19:00"}] in the PC's time zone
+    windows: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint("target_kind IN ('app', 'category')", name="ck_app_rules_kind"),
+        CheckConstraint("mode IN ('allow', 'block', 'schedule')", name="ck_app_rules_mode"),
+        UniqueConstraint("device_id", "target_kind", "target", name="uq_app_rules_target"),
+    )
+
+
+class UsageDaily(Base):
+    """Seconds an app was in front (and the child not idle) on one day, in the PC's time zone (#5)."""
+
+    __tablename__ = "usage_daily"
+
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    # A catalogue/custom app id, or "exe:<file name>" for anything else; "_total" = all screen time.
+    app_key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(60))
+    seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    path: Mapped[str | None] = mapped_column(String(1024))

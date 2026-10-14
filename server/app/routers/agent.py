@@ -6,6 +6,7 @@ local queue that is flushed to POST /agent/events; client_event_id makes retries
 """
 
 import json
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Any
@@ -17,13 +18,14 @@ from sqlalchemy.orm import Session
 
 from ..agent_bundle import load_bundle
 from ..audit import log_admin, log_system
-from ..commands import save_report
+from ..commands import get_report, save_report
 from ..deps import DbDep, DeviceDep, SettingsDep, utcnow
 from ..models import ActivityEvent, Device, DeviceCommand, LockRequest, Message, Override
 from ..notify import queue_for_event
 from ..schemas import AgentEventIn, AgentEventsIn, AgentEventsOut, CommandResultIn, EnrollRequest, EnrollResponse, HeartbeatIn
 from ..security import new_token, normalize_enrollment_code, token_hash
 from ..state import build_state, state_etag
+from .app_rules import save_usage_report
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -237,13 +239,21 @@ def update_file(path: str, device: DeviceDep, settings: SettingsDep) -> Response
 # What the PC may upload in bulk, and how big each may be. Later features add their kinds here.
 REPORT_LIMITS: dict[str, int] = {
     "processes": 512 * 1024,
+    "usage": 256 * 1024,
+    "drives": 64 * 1024,
+    "security": 256 * 1024,
 }
+
+
+# A folder-size scan of one drive, "scan:C".
+_SCAN_KIND = re.compile(r"^scan:[A-Z]$")
+SCAN_LIMIT = 8 * 1024 * 1024
 
 
 @router.post("/reports/{kind}", status_code=status.HTTP_204_NO_CONTENT)
 async def post_report(kind: str, request: Request, db: DbDep, device: DeviceDep) -> None:
     """Store the latest copy of a bulk report (the running processes, a drive scan, ...)."""
-    limit = REPORT_LIMITS.get(kind)
+    limit = SCAN_LIMIT if _SCAN_KIND.match(kind) else REPORT_LIMITS.get(kind)
     if limit is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown report kind")
     raw = await request.body()
@@ -255,7 +265,16 @@ async def post_report(kind: str, request: Request, db: DbDep, device: DeviceDep)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "report must be JSON") from exc
     if not isinstance(data, dict):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "report must be a JSON object")
-    save_report(db, device, kind, data, utcnow())
+    if kind == "usage":
+        save_usage_report(db, device, data, utcnow())
+    elif _SCAN_KIND.match(kind):
+        # Keep the previous scan, for "what changed since last time".
+        prev = get_report(db, device, kind)
+        if prev is not None:
+            save_report(db, device, "scan_prev:" + kind[-1], prev.data, prev.updated_at)
+        save_report(db, device, kind, data, utcnow())
+    else:
+        save_report(db, device, kind, data, utcnow())
     _touch(db, device, request)
     db.commit()
 

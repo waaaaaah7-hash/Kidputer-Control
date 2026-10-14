@@ -24,6 +24,9 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Common.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Apps.psm1') -Force
 Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Update.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Monitor.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Files.psm1') -Force
+Import-Module (Join-Path $InstallRoot 'Modules\KidputerControl.Security.psm1') -Force
 $paths = Initialize-KcPaths -DataRoot $DataRoot
 
 # --- Single instance ------------------------------------------------------------------------------------
@@ -64,6 +67,21 @@ $reports = @{ ProcessesAt = [DateTimeOffset]::MinValue }
 $update = @{ LastAttempt = [DateTimeOffset]::MinValue; Bundle = $null }
 try { $update.Bundle = (Get-KcLocalBundle -Root $InstallRoot).Fingerprint } catch { Write-KcLog -Level warning -Message "Can't fingerprint the installed files: $($_.Exception.Message)" }
 $appStops = New-Object System.Collections.ArrayList   # apps being closed: warning shown, then closed
+$watchdogStartTicks = [DateTime]::UtcNow.Ticks
+$appRun = @{ Identity = @{}; Cmdline = @{}; State = @{}; BlockedEventAt = @{}; Notices = (New-Object System.Collections.ArrayList); LastUsageMsg = [DateTimeOffset]::MinValue; UsageSavedAt = [DateTimeOffset]::MinValue; UsageDirty = $false; UsageSentAt = [DateTimeOffset]::MinValue }
+$usageFile = Join-Path $paths.Config 'usage.json'
+$usage = @{}
+try {
+    $u = Read-KcJsonFile -Path $usageFile
+    if ($u) {
+        foreach ($d in $u.PSObject.Properties) {
+            $usage[$d.Name] = @{}
+            foreach ($k in $d.Value.PSObject.Properties) {
+                $usage[$d.Name][$k.Name] = @{ name = [string]$k.Value.name; category = [string](Get-KcProp $k.Value 'category' ''); seconds = [int]$k.Value.seconds; path = [string](Get-KcProp $k.Value 'path' '') }
+            }
+        }
+    }
+} catch { $usage = @{} }
 $script:childSession = $null
 $lastMode = $null
 $lastUiJson = $null
@@ -209,6 +227,7 @@ function Invoke-Inbox {
                     $handled = $true
                 }
             }
+            'usage' { Add-UsageSample -Request $req }
             'ui_error' {
                 $msg = [string](Get-KcProp $req 'message' '')
                 if ($msg.Length -gt 500) { $msg = $msg.Substring(0, 500) }
@@ -280,6 +299,34 @@ function Invoke-SyncStep {
                 $reports.ProcessesAt = $now
                 [void](Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'processes' -Data (Get-ProcessReport))
             }
+            $drivesEvery = 600
+            if (Test-Live) { $drivesEvery = 60 }
+            $driveReport = $null
+            if (($now - $files.DrivesAt).TotalSeconds -ge 30) {
+                $driveReport = Get-KcDriveReport
+                $key = (@($driveReport.drives | ForEach-Object { $_.name }) + @($driveReport.devices)) -join '|'
+                if ($key -ne $files.DrivesKey -or ($now - $files.DrivesAt).TotalSeconds -ge $drivesEvery) {
+                    if (Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'drives' -Data $driveReport) {
+                        $files.DrivesKey = $key
+                        $files.DrivesAt = $now
+                    }
+                }
+            }
+            # Security tab: when something changed (at most every 5 s), else every 6 hours.
+            if (($sec.Dirty -and ($now - $sec.SentAt).TotalSeconds -ge 5) -or ($now - $sec.SentAt).TotalHours -ge 6) {
+                if ($sec.Defender -and (Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'security' -Data (Get-SecurityReport))) {
+                    $sec.SentAt = $now
+                    $sec.Dirty = $false
+                }
+            }
+            $usageEvery = 300
+            if (Test-Live) { $usageEvery = 30 }
+            if ($appRun.UsageDirty -and ($now - $appRun.UsageSentAt).TotalSeconds -ge $usageEvery) {
+                if (Send-KcReport -BaseUrl $apiUrl -Token $token -Kind 'usage' -Data @{ days = $usage }) {
+                    $appRun.UsageSentAt = $now
+                    $appRun.UsageDirty = $false
+                }
+            }
         }
         'heartbeat' {
             [void](Send-KcHeartbeat -BaseUrl $apiUrl -Token $token -Status (Get-Status))
@@ -305,6 +352,7 @@ function Get-Status {
         pin_locked_until      = $local.pin_locked_until
         child_is_admin        = $adminCheck.IsAdmin
         agent_bundle          = $update.Bundle
+        scan                  = (Get-ScanStatus)
     }
     if ($d -and $d.UnlockAt) { $s.unlock_at = ConvertTo-KcIso $d.UnlockAt }
     if ($d -and $d.OverrideEndsAt) { $s.override_ends_at = ConvertTo-KcIso $d.OverrideEndsAt }
@@ -366,7 +414,7 @@ function Update-AppStops {
         $forced = 0
         foreach ($t in $targets) { try { Stop-Process -Id $t.Id -Force -ErrorAction Stop; $forced++ } catch { } }
         Add-KcEvent -Type 'app.stopped' -Message "$($stop.Name) was closed" -Data @{ path = $stop.Path; forced = $forced }
-        Complete-Command -Id $stop.CommandId -Status 'done' -Result @{ closed = [Math]::Max([int]$stop.Count, $forced); forced = $forced }
+        if ($stop.CommandId) { Complete-Command -Id $stop.CommandId -Status 'done' -Result @{ closed = [Math]::Max([int]$stop.Count, $forced); forced = $forced } }
         $appStops.Remove($stop)
     }
 }
@@ -376,11 +424,699 @@ function Invoke-Commands {
     foreach ($cmd in @(Get-KcProp $state 'commands' @())) {
         $id = [string](Get-KcProp $cmd 'id' '')
         if (-not $id -or @($local.handled_commands) -contains $id) { continue }
-        if (@($appStops | Where-Object { $_.CommandId -eq $id }).Count) { continue }
+        if (@($appStops | Where-Object { $_.CommandId -and $_.CommandId -eq $id }).Count) { continue }
         switch ([string](Get-KcProp $cmd 'kind' '')) {
             'stop_app' { Start-AppStop -Command $cmd }
+            'list_folder' { Invoke-ListFolder -Command $cmd }
+            'security' {
+                $action = [string](Get-KcProp (Get-KcProp $cmd 'payload') 'action' '')
+                if ($securityActions -contains $action) { Request-SecurityAction -Action $action -CommandId $id }
+                else { Complete-Command -Id $id -Status 'failed' -Result @{ message = 'Unknown security action.' } }
+            }
+            'scan_drive' {
+                $letter = ([string](Get-KcProp (Get-KcProp $cmd 'payload') 'drive' '')).ToUpperInvariant()
+                $err = $null
+                if ($letter -notmatch '^[A-Z]$') { $err = 'Not a drive letter.' } else { $err = Start-DriveScan -Letter $letter -CommandId $id }
+                if ($err) { Complete-Command -Id $id -Status 'failed' -Result @{ message = $err } }
+                else { $local.handled_commands = Add-KcBoundedItem -List $local.handled_commands -Item $id -Max 200; $script:localDirty = $true }
+            }
             default { Complete-Command -Id $id -Status 'failed' -Result @{ reason = 'unsupported'; message = 'This PC needs a newer version of Kidputer Control for that.' } }
         }
+    }
+}
+
+# --- App rules (roadmap #3, #4) and usage time (#5) ------------------------------------------------------------------
+
+function Get-AppIdentity {
+    <# Who a running program is, cached per path; Java's command line (for Minecraft) per process. #>
+    param([string]$Path, [string]$ProcessKey, [int]$ProcessId)
+    $exe = ($Path -split '[\\/]')[-1].ToLowerInvariant()
+    $cmd = $null
+    if ($exe -eq 'javaw.exe' -or $exe -eq 'java.exe') {
+        if (-not $appRun.Cmdline.ContainsKey($ProcessKey)) {
+            $c = ''
+            try { $c = [string](Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop).CommandLine } catch { }
+            $appRun.Cmdline[$ProcessKey] = $c
+        }
+        $cmd = $appRun.Cmdline[$ProcessKey]
+    }
+    if (-not $appRun.Identity.ContainsKey($Path)) {
+        if ($appRun.Identity.Count -gt 2000) { $appRun.Identity.Clear() }
+        $appRun.Identity[$Path] = @{ Version = (Get-KcFileVersionInfo -Path $Path) }
+    }
+    New-KcAppIdentity -Path $Path -VersionInfo $appRun.Identity[$Path].Version -CommandLine $cmd
+}
+
+function Add-ChildNotice {
+    param([string]$Text, [int]$Seconds = 8)
+    foreach ($n in @($appRun.Notices)) { if ($n.text -eq $Text) { $n.until = (Get-KcNow).AddSeconds($Seconds); return } }
+    [void]$appRun.Notices.Add(@{ text = $Text; until = (Get-KcNow).AddSeconds($Seconds) })
+}
+
+function Invoke-AppRules {
+    <#
+        Apps outside their allowed times: a newly started one is closed at once (it has nothing to save),
+        with a message saying when it's available; one that was already open when its time ran out gets
+        the same countdown warning as a parent's Close.
+    #>
+    $rules = @(Get-KcProp $state 'app_rules' @())
+    if ($rules.Count -eq 0 -or $null -eq $script:childSession) { $appRun.State.Clear(); return }
+    $catalog = @(Get-KcProp $state 'app_catalog' @())
+    $now = Get-KcNow
+    $horizon = ConvertTo-KcDate (Get-KcProp $state 'lock_windows_until')
+    $useWeekly = ($null -eq $horizon -or $now -ge $horizon)
+    $alive = @{}
+    foreach ($p in (Get-KcSessionProcessList -SessionId $script:childSession)) {
+        if (-not $p.Path) { continue }
+        if (Test-KcProtectedProcess -Name $p.Name -Path $p.Path -InstallRoot $InstallRoot) { continue }
+        $key = "$($p.Id)|$($p.StartTime)"
+        $alive[$key] = $true
+        $app = Find-KcCatalogApp -Identity (Get-AppIdentity -Path $p.Path -ProcessKey $key -ProcessId $p.Id) -Catalog $catalog
+        if ($null -eq $app) { continue }
+        $rule = Get-KcAppRule -App $app -Rules $rules
+        $d = Test-KcAppAllowed -Rule $rule -Now $now -UseWeekly:$useWeekly
+        $prev = $appRun.State[$key]
+        if ($d.Allowed) { $appRun.State[$key] = 'allowed'; continue }
+        if ($prev -eq 'stopping') { continue }
+        # Already open before the watchdog started, or allowed until now: warn first.
+        $startedEarlier = $false
+        $ticks = 0L
+        if ([long]::TryParse([string]$p.StartTime, [ref]$ticks)) { $startedEarlier = $ticks -lt $watchdogStartTicks }
+        if ($prev -eq 'allowed' -or ($null -eq $prev -and $startedEarlier)) {
+            $grace = [Math]::Min([Math]::Max([int](Get-KcProp $state 'countdown_seconds' 300), 30), 300)
+            if (-not @($appStops | Where-Object { $_.Path -eq $p.Path }).Count) {
+                [void]$appStops.Add(@{ CommandId = $null; Path = $p.Path; Name = [string]$app.name; EndsAt = $now.AddSeconds($grace); ForceAt = $null })
+                Add-KcEvent -Type 'app.time_up' -Message "$($app.name): allowed time is over, closing in $grace seconds" -Data @{ app = $app.id; path = $p.Path }
+            }
+            $appRun.State[$key] = 'stopping'
+            continue
+        }
+        try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { }
+        $appRun.State[$key] = 'blocked'
+        Add-ChildNotice -Text (Get-KcBlockedMessage -Name ([string]$app.name) -Decision $d)
+        $last = $appRun.BlockedEventAt[[string]$app.id]
+        if ($null -eq $last -or ($now - $last).TotalMinutes -ge 10) {
+            $appRun.BlockedEventAt[[string]$app.id] = $now
+            Add-KcEvent -Type 'app.blocked' -Message "$($app.name) was blocked (not allowed right now)" -Data @{ app = $app.id; name = $app.name; path = $p.Path }
+        }
+    }
+    foreach ($k in @($appRun.State.Keys)) { if (-not $alive.ContainsKey($k)) { $appRun.State.Remove($k); $appRun.Cmdline.Remove($k) } }
+    foreach ($n in @($appRun.Notices)) { if ($now -ge $n.until) { $appRun.Notices.Remove($n) } }
+}
+
+function Add-UsageSample {
+    <# The UI agent's minute of "what was in front" (untrusted input: validated and capped). #>
+    param($Request)
+    $now = Get-KcNow
+    if (($now - $appRun.LastUsageMsg).TotalSeconds -lt 45) { return }
+    $appRun.LastUsageMsg = $now
+    $day = Get-KcUsageDay -Now $now -DayStarts @(Get-KcProp $state 'day_starts' @())
+    if (-not $day) { $day = [DateTime]::Now.ToString('yyyy-MM-dd') }
+    $catalog = @(Get-KcProp $state 'app_catalog' @())
+    $budget = 70
+    $active = [Math]::Min([Math]::Max([int](Get-KcProp $Request 'active_seconds' 0), 0), 70)
+    if ($active -gt 0) { Add-KcUsage -Usage $usage -Day $day -Key '_total' -Name 'Screen time' -Seconds $active }
+    foreach ($s in @(Get-KcProp $Request 'samples' @()) | Select-Object -First 10) {
+        $path = [string](Get-KcProp $s 'path' '')
+        $secs = [Math]::Min([Math]::Max([int](Get-KcProp $s 'seconds' 0), 0), $budget)
+        if (-not $path -or $path.Length -gt 1024 -or $secs -le 0) { continue }
+        $budget -= $secs
+        $pid0 = 0; $pkey = "usage|$path"
+        if ($null -ne $script:childSession) {
+            $match = @(Get-KcSessionProcessList -SessionId $script:childSession | Where-Object { $_.Path -and [string]::Equals($_.Path, $path, [StringComparison]::OrdinalIgnoreCase) }) | Select-Object -First 1
+            if ($match) { $pid0 = $match.Id; $pkey = "$($match.Id)|$($match.StartTime)" }
+        }
+        $identity = Get-AppIdentity -Path $path -ProcessKey $pkey -ProcessId $pid0
+        $app = Find-KcCatalogApp -Identity $identity -Catalog $catalog
+        if ($app) {
+            Add-KcUsage -Usage $usage -Day $day -Key ([string]$app.id) -Name ([string]$app.name) -Category ([string]$app.category) -Path $path -Seconds $secs
+        } else {
+            $v = $appRun.Identity[$path].Version
+            $name = Get-KcAppDisplayName -Process ([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension(($path -split '[\\/]')[-1]) }) -VersionInfo $v
+            Add-KcUsage -Usage $usage -Day $day -Key ('exe:' + ($path -split '[\\/]')[-1].ToLowerInvariant()) -Name $name -Path $path -Seconds $secs
+        }
+        if ($budget -le 0) { break }
+    }
+    $appRun.UsageDirty = $true
+    if (($now - $appRun.UsageSavedAt).TotalSeconds -ge 60) {
+        Write-KcJsonFile -Path $usageFile -Object $usage
+        $appRun.UsageSavedAt = $now
+    }
+}
+
+# --- Drives, folder-size scans and the file explorer (roadmap #19) -----------------------------------------------------
+
+$scanDir = Join-Path $paths.Config 'scans'
+$files = @{ DrivesAt = [DateTimeOffset]::MinValue; DrivesKey = ''; Scan = $null; CheckAt = [DateTimeOffset]::MinValue }
+$lastScansFile = Join-Path $scanDir 'last.json'
+$lastScans = @{}
+try { $ls = Read-KcJsonFile -Path $lastScansFile; if ($ls) { foreach ($p in $ls.PSObject.Properties) { $lastScans[$p.Name] = [string]$p.Value } } } catch { }
+
+function Start-DriveScan {
+    <# Start a folder-size scan of one drive in a separate, background-priority process. #>
+    param([string]$Letter, [string]$CommandId)
+    if ($files.Scan) { return "A scan of drive $($files.Scan.Letter): is already running." }
+    $drive = $null
+    try { $drive = [IO.DriveInfo]::new("${Letter}:\") } catch { }
+    if ($null -eq $drive -or -not $drive.IsReady) { return "Drive ${Letter}: isn't available on the PC." }
+    [void][IO.Directory]::CreateDirectory($scanDir)
+    $out = Join-Path $scanDir "$Letter.json"
+    $progress = Join-Path $scanDir "$Letter.progress.json"
+    foreach ($f in $out, $progress) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    $min = Get-KcScanMinBytes -UsedBytes ([long]$drive.TotalSize - [long]$drive.AvailableFreeSpace)
+    # No quotes round C:\ : a quote right after a backslash would be taken as a literal quote by Windows.
+    $scanArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -Root {1}:\ -OutFile "{2}" -ProgressFile "{3}" -MinNodeBytes {4}' -f (Join-Path $InstallRoot 'Scan.ps1'), $Letter, $out, $progress, $min
+    $proc = Start-Process -FilePath $powershellExe -ArgumentList $scanArgs -WindowStyle Hidden -PassThru
+    $files.Scan = @{ Letter = $Letter; Proc = $proc; Out = $out; Progress = $progress; StartedAt = (Get-KcNow); CommandId = $CommandId; Uploaded = $false }
+    Add-KcEvent -Type 'files.scan_started' -Message "Scanning drive ${Letter}: for folder sizes"
+    $null
+}
+
+function Update-DriveScan {
+    $s = $files.Scan
+    $now = Get-KcNow
+    if ($null -eq $s) {
+        # Regular scans: when due, and preferably while the child isn't using the PC (or it's locked).
+        if ($now -lt $files.CheckAt) { return }
+        $files.CheckAt = $now.AddMinutes(10)
+        $every = [int](Get-KcProp $state 'scan_every_days' 7)
+        $due = Get-KcDueScan -Drives @((Get-KcDriveReport).drives) -LastScans $lastScans -EveryDays $every -Now $now
+        if (-not $due) { return }
+        $quiet = (-not $script:consoleIsChild) -or ($script:currentMode.Mode -eq 'locked')
+        $last = $null
+        if ($lastScans.ContainsKey($due)) { $last = ConvertTo-KcDate $lastScans[$due] }
+        $veryOverdue = ($null -eq $last) -or (($now - $last).TotalDays -ge 2 * $every)
+        if ($quiet -or $veryOverdue) { [void](Start-DriveScan -Letter $due -CommandId $null) }
+        return
+    }
+    if (-not $s.Proc.HasExited) {
+        if (($now - $s.StartedAt).TotalHours -ge 2) {
+            try { $s.Proc.Kill() } catch { }
+            Add-KcEvent -Type 'files.scan_failed' -Severity warning -Message "Scan of drive $($s.Letter): took over 2 hours and was stopped"
+            if ($s.CommandId) { Complete-Command -Id $s.CommandId -Status 'failed' -Result @{ message = 'The scan took over 2 hours and was stopped.' } }
+            $files.Scan = $null
+        }
+        return
+    }
+    if (-not [IO.File]::Exists($s.Out)) {
+        Add-KcEvent -Type 'files.scan_failed' -Severity warning -Message "Scan of drive $($s.Letter): failed"
+        if ($s.CommandId) { Complete-Command -Id $s.CommandId -Status 'failed' -Result @{ message = 'The scan failed on the PC.' } }
+        $files.Scan = $null
+        return
+    }
+    if (-not $token -or -not $apiUrl) { return }
+    # Upload the result (retried every tick until the server has it).
+    try {
+        $body = [IO.File]::ReadAllText($s.Out, (New-Object System.Text.UTF8Encoding($false)))
+        $r = Invoke-KcApi -BaseUrl $apiUrl -Method POST -Path "/api/v1/agent/reports/scan:$($s.Letter)" -Token $token -Body $body
+        if ($r.Status -ne 204) { return }
+    } catch { return }
+    $lastScans[$s.Letter] = ConvertTo-KcIso $now
+    Write-KcJsonFile -Path $lastScansFile -Object $lastScans
+    $mins = [Math]::Max(1, [int]($now - $s.StartedAt).TotalMinutes)
+    Add-KcEvent -Type 'files.scanned' -Message "Drive $($s.Letter): scanned in $mins min"
+    if ($s.CommandId) { Complete-Command -Id $s.CommandId -Status 'done' -Result @{ minutes = $mins } }
+    foreach ($f in $s.Out, $s.Progress) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    $files.Scan = $null
+}
+
+function Get-ScanStatus {
+    $s = $files.Scan
+    if ($null -eq $s) { return $null }
+    $count = 0
+    try { $p = Read-KcJsonFile -Path $s.Progress; if ($p) { $count = [long]$p.files } } catch { }
+    @{ drive = $s.Letter; files = $count; started_at = (ConvertTo-KcIso $s.StartedAt) }
+}
+
+function Invoke-ListFolder {
+    param($Command)
+    $path = [string](Get-KcProp (Get-KcProp $Command 'payload') 'path' '')
+    if (-not (Test-KcFolderPath $path)) {
+        Complete-Command -Id $Command.id -Status 'failed' -Result @{ message = 'Not a folder path on this PC.' }
+        return
+    }
+    try {
+        $listing = Get-KcFolderListing -Path $path
+        Complete-Command -Id $Command.id -Status 'done' -Result $listing
+    } catch {
+        Complete-Command -Id $Command.id -Status 'failed' -Result @{ message = $_.Exception.Message }
+    }
+}
+
+# --- Security tab (roadmap #23): virus protection and Windows updates ------------------------------------------------
+
+$securityDir = Join-Path $paths.Config 'security'
+$securityFile = Join-Path $securityDir 'state.json'
+$securityActions = @('quick_scan', 'full_scan', 'update_signatures', 'remove_threats', 'check_updates', 'install_updates')
+# Longest each job may run before it's stopped.
+$securityTimeout = @{ quick_scan = 90; full_scan = 360; update_signatures = 30; remove_threats = 30; check_updates = 60; install_updates = 240 }
+$sec = @{
+    Job = $null; Queue = (New-Object System.Collections.ArrayList); CheckedAt = [DateTimeOffset]::MinValue
+    Defender = $null; Updates = $null; LockedSince = $null; Dirty = $true; SentAt = [DateTimeOffset]::MinValue
+    InstallWaiting = $null
+}
+# Kept across restarts.
+$secSaved = @{
+    initialized = $false; seen_threats = @(); pending = @(); last_check_at = $null; last_check_try_at = $null; last_install = $null
+    last_install_try_at = $null; last_auto_full_scan_at = $null; restart_requested_at = $null
+    reboot_required_since = $null; restart_alert_at = $null; signatures_alert_at = $null; paused = $false; disabled = $false
+    scan_alert_at = $null; last_auto_quick_scan_at = $null; pause_blocked_by_us = $false
+}
+try {
+    $saved = Read-KcJsonFile -Path $securityFile
+    if ($saved) { foreach ($k in @($secSaved.Keys)) { $v = Get-KcProp $saved $k; if ($null -ne $v) { $secSaved[$k] = $v } } }
+} catch { }
+
+function Save-SecurityState {
+    [void][IO.Directory]::CreateDirectory($securityDir)
+    Write-KcJsonFile -Path $securityFile -Object $secSaved
+}
+
+function Get-SecuritySetting {
+    param([string]$Name, $Default)
+    Get-KcProp (Get-KcProp $state 'security') $Name $Default
+}
+
+function Request-SecurityAction {
+    <# Queue a slow security job; jobs run one at a time. A repeat of a queued or running action joins it. #>
+    param([string]$Action, [string]$CommandId)
+    $existing = $null
+    if ($sec.Job -and $sec.Job.Action -eq $Action) { $existing = $sec.Job }
+    foreach ($q in $sec.Queue) { if ($q.Action -eq $Action) { $existing = $q } }
+    if ($existing) {
+        if ($CommandId) { $existing.CommandIds += $CommandId }
+    } else {
+        [void]$sec.Queue.Add(@{ Action = $Action; CommandIds = @($(if ($CommandId) { $CommandId })) })
+    }
+    if ($CommandId) { $local.handled_commands = Add-KcBoundedItem -List $local.handled_commands -Item $CommandId -Max 200; $script:localDirty = $true }
+    $sec.Dirty = $true
+}
+
+function Start-SecurityJob {
+    param($Item)
+    [void][IO.Directory]::CreateDirectory($securityDir)
+    $out = Join-Path $securityDir "$($Item.Action).json"
+    Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
+    $jobArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -Action {1} -OutFile "{2}"' -f (Join-Path $InstallRoot 'Security.ps1'), $Item.Action, $out
+    if ($Item.Action -eq 'install_updates' -and [bool](Get-SecuritySetting 'feature_updates' $false)) { $jobArgs += ' -IncludeFeatureUpdates' }
+    $proc = Start-Process -FilePath $powershellExe -ArgumentList $jobArgs -WindowStyle Hidden -PassThru
+    $sec.Job = @{ Action = $Item.Action; CommandIds = @($Item.CommandIds); Proc = $proc; Out = $out; StartedAt = (Get-KcNow) }
+    if ($Item.Action -eq 'install_updates') { $secSaved.last_install_try_at = ConvertTo-KcIso (Get-KcNow); Save-SecurityState }
+    $sec.Dirty = $true
+}
+
+$securityLabels = @{
+    quick_scan = 'Quick virus scan'; full_scan = 'Full virus scan'; update_signatures = 'Virus definitions update'
+    remove_threats = 'Removing threats'; check_updates = 'Check for Windows updates'; install_updates = 'Installing Windows updates'
+}
+
+function Complete-SecurityJob {
+    param($Job, $Result)
+    $ok = [bool](Get-KcProp $Result 'ok' $false)
+    $msg = [string](Get-KcProp $Result 'message' '')
+    $label = $securityLabels[$Job.Action]
+    $mins = [Math]::Max(1, [int]((Get-KcNow) - $Job.StartedAt).TotalMinutes)
+    $commandResult = @{ message = $msg; minutes = $mins }
+    switch ($Job.Action) {
+        { $_ -in 'quick_scan', 'full_scan' } {
+            if ($ok) { Add-KcEvent -Type 'defender.scan_finished' -Message "$label finished in $mins min" -Data @{ scan = $Job.Action } }
+            else { Add-KcEvent -Type 'defender.scan_failed' -Severity warning -Message "$label failed: $msg" }
+        }
+        'update_signatures' { if (-not $ok) { Add-KcEvent -Type 'defender.update_failed' -Severity warning -Message "Updating virus definitions failed: $msg" } }
+        'remove_threats' { if ($ok) { Add-KcEvent -Type 'defender.threats_removed' -Message 'Threats removed' } else { Add-KcEvent -Type 'defender.remove_failed' -Severity warning -Message "Removing threats failed: $msg" } }
+        { $_ -in 'check_updates', 'install_updates' } {
+            if ($ok) {
+                $secSaved.pending = @(Get-KcProp $Result 'updates' @())
+                $secSaved.last_check_at = ConvertTo-KcIso (Get-KcNow)
+            }
+            if ($Job.Action -eq 'install_updates') {
+                $installed = @(Get-KcProp $Result 'installed' @())
+                $failed = @(Get-KcProp $Result 'failed' @())
+                if ($ok -and $installed.Count) {
+                    # What's left waiting is unknown until the next check; run one straight after.
+                    $secSaved.pending = @($secSaved.pending | Where-Object { $installed -notcontains $_.title })
+                }
+                $secSaved.last_install = [ordered]@{ at = (ConvertTo-KcIso (Get-KcNow)); installed = $installed; failed = $failed; message = $msg }
+                if ($installed.Count) { Add-KcEvent -Type 'windows_update.installed' -Message ("Installed {0} Windows update(s): {1}" -f $installed.Count, (($installed | Select-Object -First 3) -join '; ')) -Data @{ count = $installed.Count } }
+                if ($failed.Count -or -not $ok) {
+                    $what = $(if ($failed.Count) { ($failed | Select-Object -First 3) -join '; ' } else { $msg })
+                    Add-KcEvent -Type 'windows_update.failed' -Severity warning -Message "Windows updates failed to install: $what"
+                }
+                $commandResult.installed = $installed.Count
+                $commandResult.failed = $failed.Count
+            }
+            Save-SecurityState
+        }
+    }
+    foreach ($id in @($Job.CommandIds)) { if ($id) { Complete-Command -Id $id -Status $(if ($ok) { 'done' } else { 'failed' }) -Result $commandResult } }
+    $sec.CheckedAt = [DateTimeOffset]::MinValue   # read Defender and Windows Update again now
+    if ($Job.Action -eq 'install_updates' -and $ok) { Request-SecurityAction -Action 'check_updates' -CommandId $null }
+    $sec.Dirty = $true
+}
+
+function Update-SecurityReadings {
+    <# Defender and Windows Update quick facts, and the alerts that come from them. #>
+    $now = Get-KcNow
+    $def = Get-KcDefenderReport
+    $upd = Get-KcUpdateInfo -Now $now
+    # New threats (the first reading only learns what's already there).
+    $seen = @($secSaved.seen_threats)
+    foreach ($t in @($def.threats)) {
+        if ($seen -contains $t.id) { continue }
+        $seen += $t.id
+        if (-not $secSaved.initialized) { continue }
+        $where = $(if (@($t.files).Count) { " in $(@($t.files)[0])" } else { '' })
+        $what = $(if ($t.needs_action) { 'it still needs action' } else { "Defender $($t.status) it" })
+        Add-KcEvent -Type 'defender.threat_found' -Severity critical -Message "$($t.name) found$where; $what" -Data @{ threat = $t.name; status = $t.status; severity = $t.severity }
+    }
+    $secSaved.seen_threats = @($seen | Select-Object -Last 200)
+    $secSaved.initialized = $true
+    # Old virus definitions (once a day).
+    $sigs = ConvertTo-KcDate $def.signatures_updated
+    if ($def.available -and $def.antivirus_enabled -and $sigs -and ($now - $sigs).TotalDays -ge 3) {
+        $lastAlert = ConvertTo-KcDate $secSaved.signatures_alert_at
+        if ($null -eq $lastAlert -or ($now - $lastAlert).TotalHours -ge 24) {
+            Add-KcEvent -Type 'defender.signatures_old' -Severity warning -Message ("Virus definitions are {0} days old" -f [int]($now - $sigs).TotalDays)
+            $secSaved.signatures_alert_at = ConvertTo-KcIso $now
+            Request-SecurityAction -Action 'update_signatures' -CommandId $null
+        }
+    }
+    # No virus scan for two weeks (once a week).
+    if ($def.available -and $def.antivirus_enabled) {
+        $age = Get-KcLastScanAge -QuickScanAt $def.quick_scan_at -FullScanAt $def.full_scan_at -Now $now
+        $lastAlert = ConvertTo-KcDate $secSaved.scan_alert_at
+        if ($null -ne $age -and $age -ge 14 -and ($null -eq $lastAlert -or ($now - $lastAlert).TotalDays -ge 7)) {
+            Add-KcEvent -Type 'defender.scan_overdue' -Severity warning -Message ("No virus scan for {0} days" -f [int]$age)
+            $secSaved.scan_alert_at = ConvertTo-KcIso $now
+        }
+    }
+    # Hide Windows' "Pause updates" button where the edition honours it (Pro, Education, Enterprise).
+    $supported = Test-KcEditionHonoursPolicies ([string]$upd.windows.edition)
+    try {
+        if ([bool](Get-SecuritySetting 'block_pause_updates' $true) -and $supported) {
+            if (-not (Test-KcPauseBlocked)) { Set-KcPauseBlocked -Block $true }
+            $secSaved.pause_blocked_by_us = $true
+        } elseif ($secSaved.pause_blocked_by_us) {
+            Set-KcPauseBlocked -Block $false
+            $secSaved.pause_blocked_by_us = $false
+        }
+    } catch { Write-KcLog -Level warning -Message "Pause updates setting: $($_.Exception.Message)" }
+    $upd.pause_blocking = $(if (-not $supported) { 'unsupported' } elseif (Test-KcPauseBlocked) { 'on' } else { 'off' })
+    # A restart that's been waiting for days (once a day).
+    if ($upd.reboot_required) {
+        if (-not $secSaved.reboot_required_since) { $secSaved.reboot_required_since = ConvertTo-KcIso $now }
+        $since = ConvertTo-KcDate $secSaved.reboot_required_since
+        $lastAlert = ConvertTo-KcDate $secSaved.restart_alert_at
+        if (($now - $since).TotalDays -ge 3 -and ($null -eq $lastAlert -or ($now - $lastAlert).TotalHours -ge 24)) {
+            Add-KcEvent -Type 'windows_update.restart_pending' -Severity warning -Message ("A restart has been needed for {0} days to finish installing Windows updates" -f [int]($now - $since).TotalDays)
+            $secSaved.restart_alert_at = ConvertTo-KcIso $now
+        }
+    } else { $secSaved.reboot_required_since = $null }
+    $upd.reboot_required_since = $secSaved.reboot_required_since
+    # Paused, or switched off.
+    $paused = [bool]$upd.paused_until
+    if ($paused -and -not $secSaved.paused) { Add-KcEvent -Type 'windows_update.paused' -Severity warning -Message "Windows updates were paused until $($upd.paused_until)" }
+    $secSaved.paused = $paused
+    if ($upd.service_disabled -and -not $secSaved.disabled) { Add-KcEvent -Type 'windows_update.disabled' -Severity warning -Message 'Windows Update was switched off' }
+    $secSaved.disabled = [bool]$upd.service_disabled
+    Save-SecurityState
+    $sec.Defender = $def
+    $sec.Updates = $upd
+    $sec.Dirty = $true
+}
+
+function Update-Security {
+    $now = Get-KcNow
+    # A running job: finished, or taking too long?
+    $j = $sec.Job
+    if ($j) {
+        if ($j.Proc.HasExited) {
+            $result = $null
+            try { $result = Read-KcJsonFile -Path $j.Out } catch { }
+            if ($null -eq $result) { $result = [pscustomobject]@{ ok = $false; message = 'The job stopped unexpectedly.' } }
+            $sec.Job = $null
+            Complete-SecurityJob -Job $j -Result $result
+            Remove-Item -LiteralPath $j.Out -Force -ErrorAction SilentlyContinue
+        } elseif (($now - $j.StartedAt).TotalMinutes -ge $securityTimeout[$j.Action]) {
+            try { $j.Proc.Kill() } catch { }
+            $sec.Job = $null
+            Complete-SecurityJob -Job $j -Result ([pscustomobject]@{ ok = $false; message = "It took over $($securityTimeout[$j.Action]) minutes and was stopped." })
+        }
+    }
+
+    # Quick readings: every 30 minutes, every minute while a parent is watching.
+    $every = 1800
+    if (Test-Live) { $every = 60 }
+    if (($now - $sec.CheckedAt).TotalSeconds -ge $every) {
+        $sec.CheckedAt = $now
+        Update-SecurityReadings
+    }
+
+    # Bedtime: has the scheduled lock been on for a while? (Restarts and weekly full scans wait for it.)
+    $bedtime = ($script:currentMode.Mode -eq 'locked' -and $script:currentDecision -and $script:currentDecision.Reason -eq 'schedule')
+    if ($bedtime) { if ($null -eq $sec.LockedSince) { $sec.LockedSince = $now } } else { $sec.LockedSince = $null }
+
+    $mode = [string](Get-SecuritySetting 'updates_mode' 'install')
+    # Look for Windows updates twice a day.
+    $lastTry = ConvertTo-KcDate $secSaved.last_check_try_at
+    if ($mode -ne 'off' -and ($null -eq $lastTry -or ($now - $lastTry).TotalHours -ge 12)) {
+        $secSaved.last_check_try_at = ConvertTo-KcIso $now
+        Save-SecurityState
+        Request-SecurityAction -Action 'check_updates' -CommandId $null
+    }
+    # Install what's waiting, at most every 6 hours, not on a low battery.
+    if ($mode -eq 'install') {
+        $wanted = @($secSaved.pending | Where-Object { Test-KcUpdateWanted -Kind ([string](Get-KcProp $_ 'kind' 'quality')) -IncludeFeature ([bool](Get-SecuritySetting 'feature_updates' $false)) })
+        $lastTry = ConvertTo-KcDate $secSaved.last_install_try_at
+        $waitFor = $null
+        if ($wanted.Count -and ($null -eq $lastTry -or ($now - $lastTry).TotalHours -ge 6)) {
+            $batteries = @()
+            try { $batteries = @(Get-CimInstance Win32_Battery -ErrorAction Stop) } catch { }
+            if (-not (Test-KcPowerOk -Batteries $batteries)) { $waitFor = 'power' }
+            elseif (Test-KcMeteredConnection) { $waitFor = 'unmetered' }
+            else { Request-SecurityAction -Action 'install_updates' -CommandId $null }
+        }
+        if ($waitFor -ne $sec.InstallWaiting) { $sec.InstallWaiting = $waitFor; $sec.Dirty = $true }
+    }
+    # Weekly full virus scan, at bedtime.
+    if ([bool](Get-SecuritySetting 'weekly_full_scan' $true) -and $sec.LockedSince -and ($now - $sec.LockedSince).TotalMinutes -ge 20 -and $sec.Defender -and $sec.Defender.available) {
+        $lastFull = ConvertTo-KcDate $sec.Defender.full_scan_at
+        $lastAuto = ConvertTo-KcDate $secSaved.last_auto_full_scan_at
+        if (($null -eq $lastFull -or ($now - $lastFull).TotalDays -ge 7) -and ($null -eq $lastAuto -or ($now - $lastAuto).TotalDays -ge 6)) {
+            $secSaved.last_auto_full_scan_at = ConvertTo-KcIso $now
+            Save-SecurityState
+            Request-SecurityAction -Action 'full_scan' -CommandId $null
+        }
+    }
+    # No full scans wanted, but nothing has scanned for a week: a quick scan at bedtime instead.
+    if (-not [bool](Get-SecuritySetting 'weekly_full_scan' $true) -and $sec.LockedSince -and ($now - $sec.LockedSince).TotalMinutes -ge 20 -and $sec.Defender -and $sec.Defender.available) {
+        $age = Get-KcLastScanAge -QuickScanAt $sec.Defender.quick_scan_at -FullScanAt $sec.Defender.full_scan_at -Now $now
+        $lastAuto = ConvertTo-KcDate $secSaved.last_auto_quick_scan_at
+        if (($null -eq $age -or $age -ge 7) -and ($null -eq $lastAuto -or ($now - $lastAuto).TotalDays -ge 6)) {
+            $secSaved.last_auto_quick_scan_at = ConvertTo-KcIso $now
+            Save-SecurityState
+            Request-SecurityAction -Action 'quick_scan' -CommandId $null
+        }
+    }
+    # Restart at bedtime to finish installing updates (never in the middle of an install).
+    $installing = ($sec.Job -and $sec.Job.Action -eq 'install_updates')
+    if (-not $installing -and $sec.Updates -and (Test-KcRestartDue -Allowed ([bool](Get-SecuritySetting 'restart_for_updates' $true)) -RebootRequired ([bool]$sec.Updates.reboot_required) -LockedSince $sec.LockedSince -LastRestartAt $secSaved.restart_requested_at -Now $now)) {
+        $secSaved.restart_requested_at = ConvertTo-KcIso $now
+        Save-SecurityState
+        Add-KcEvent -Type 'windows_update.restarting' -Message 'Restarting at bedtime to finish installing Windows updates'
+        try { Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\shutdown.exe') -ArgumentList '/r /t 120 /d p:2:17 /c "Kidputer Control: restarting to finish Windows updates."' -WindowStyle Hidden } catch {
+            Write-KcLog -Level warning -Message "Restart for updates failed: $($_.Exception.Message)"
+        }
+    }
+
+    # Start the next job.
+    if (-not $sec.Job -and $sec.Queue.Count) {
+        $next = $sec.Queue[0]
+        $sec.Queue.RemoveAt(0)
+        Start-SecurityJob -Item $next
+    }
+}
+
+function Get-SecurityReport {
+    $running = $null
+    if ($sec.Job) { $running = [ordered]@{ action = $sec.Job.Action; started_at = (ConvertTo-KcIso $sec.Job.StartedAt) } }
+    $updates = [ordered]@{}
+    if ($sec.Updates) { foreach ($k in $sec.Updates.Keys) { $updates[$k] = $sec.Updates[$k] } }
+    $updates.pending = @($secSaved.pending)
+    $updates.last_check_at = $secSaved.last_check_at
+    $updates.last_install = $secSaved.last_install
+    # Updates waiting to install until the PC is on mains power ('power') or off a metered connection ('unmetered').
+    $updates.install_waiting = $sec.InstallWaiting
+    [ordered]@{
+        defender = $sec.Defender
+        updates  = $updates
+        running  = $running
+        queued   = @($sec.Queue | ForEach-Object { $_.Action })
+    }
+}
+
+function Test-RestartTonight {
+    <# The countdown warns the child when the PC will restart at bedtime to finish updates. #>
+    [bool]($sec.Updates -and $sec.Updates.reboot_required -and [bool](Get-SecuritySetting 'restart_for_updates' $true))
+}
+
+# --- Change monitoring (roadmap #17) ---------------------------------------------------------------------------------
+
+$monitorFile = Join-Path $paths.Config 'monitor.json'
+$mon = $null
+try { $mon = Read-KcJsonFile -Path $monitorFile } catch { $mon = $null }
+if ($null -eq $mon) { $mon = [pscustomobject]@{ started_at = (ConvertTo-KcIso (Get-KcNow)) } }
+$monSeen = @{}
+$seenProp = Get-KcProp $mon 'seen'
+if ($seenProp) { foreach ($p in $seenProp.PSObject.Properties) { $monSeen[$p.Name] = [string]$p.Value } }
+$monRun = @{ Due = @{}; KnownPids = @{}; Dirty = $false; SavedAt = [DateTimeOffset]::MinValue; ProfilePath = $null }
+# The first two days everything is "new", so programs are only learned, not reported.
+$LearningHours = 48
+
+function Test-MonDue {
+    param([string]$Name, [int]$Seconds)
+    $now = Get-KcNow
+    $due = $monRun.Due[$Name]
+    if ($null -ne $due -and $now -lt $due) { return $false }
+    $monRun.Due[$Name] = $now.AddSeconds($Seconds)
+    $true
+}
+
+function Set-MonValue {
+    param([string]$Name, $Value)
+    if ($mon.PSObject.Properties[$Name]) { $mon.$Name = $Value } else { $mon | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+    $monRun.Dirty = $true
+}
+
+function Add-MonEvents {
+    param([object[]]$Events)
+    foreach ($e in @($Events)) { if ($e) { Add-KcEventFromResult -Event $e } }
+}
+
+function Update-ProgramList {
+    <# Compare one installed-programs list with the stored one; the first time, just remember it. #>
+    param([string]$Name, $Current)
+    if ($null -eq $Current) { return }
+    $old = Get-KcProp $mon $Name
+    if ($null -ne $old) { Add-MonEvents (Get-KcProgramChangeEvents -Old @($old) -New @($Current)) }
+    Set-MonValue $Name @($Current)
+}
+
+function Invoke-ChangeMonitor {
+    $now = Get-KcNow
+    $learning = $false
+    $started = ConvertTo-KcDate (Get-KcProp $mon 'started_at')
+    if ($started -and ($now - $started).TotalHours -lt $LearningHours) { $learning = $true }
+
+    # Programs run for the first time (and archive tools opening an archive), in the child's session.
+    if ($null -ne $script:childSession -and (Test-MonDue 'processes' 2)) {
+        $removable = @((Get-KcRemovableDrives) | ForEach-Object { $_.name })
+        $alive = @{}
+        foreach ($p in (Get-KcSessionProcesses -SessionId $script:childSession)) {
+            $id = "$($p.Id)|$($p.StartTime)"
+            $alive[$id] = $true
+            if ($monRun.KnownPids.ContainsKey($id)) { continue }
+            $monRun.KnownPids[$id] = $true
+            if (-not $p.Path) { continue }
+            $v = Get-KcFileVersionInfo -Path $p.Path
+            $ev = Get-KcFirstRunEvent -Process $p -Seen $monSeen -Now (ConvertTo-KcIso $now) -RemovableDrives $removable -InstallRoot $InstallRoot -VersionInfo $v -Learning:$learning
+            if ($ev) {
+                Add-KcEventFromResult -Event $ev
+                if ($ev.data.ContainsKey('flagged')) {
+                    Add-KcEvent -Type 'software.vpn_detected' -Severity warning -Message "VPN or remote-control app run: $($ev.data.name)" -Data @{ name = $ev.data.name; kind = $ev.data.flagged; path = $p.Path }
+                }
+            }
+            $monRun.Dirty = $true
+            if (@('7zfm', '7zg', 'winrar', 'peazip', 'bandizip') -contains ([string]$p.Name).ToLowerInvariant()) {
+                try {
+                    $cmd = [string](Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$p.Id)" -ErrorAction Stop).CommandLine
+                    $m = [regex]::Match($cmd, '"?([^"]+\.(zip|rar|7z|tar|gz|iso))"?', 'IgnoreCase')
+                    if ($m.Success) { Add-KcEvent -Type 'archive.opened' -Message "Opened $([IO.Path]::GetFileName($m.Groups[1].Value)) in $($p.Name)" -Data @{ path = $m.Groups[1].Value; tool = $p.Name } }
+                } catch { }
+            }
+        }
+        foreach ($k in @($monRun.KnownPids.Keys)) { if (-not $alive.ContainsKey($k)) { $monRun.KnownPids.Remove($k) } }
+        Limit-KcSeenPrograms -Seen $monSeen
+    }
+
+    # USB drives, with a quick look at what's on them.
+    if (Test-MonDue 'usb' 10) {
+        $drives = @(Get-KcRemovableDrives)
+        $old = Get-KcProp $mon 'usb'
+        if ($null -ne $old) {
+            foreach ($d in (Compare-KcKeyed -Old @($old) -New $drives -Key 'name').Added) {
+                $sum = Get-KcDriveSummary -Root $d.name
+                $label = $d.label; if (-not $label) { $label = 'USB drive' }
+                $gb = [Math]::Round($d.size / 1GB, 1)
+                Add-KcEvent -Type 'usb.connected' -Message ("{0} ({1}, {2} GB) connected: {3} programs, {4} archives" -f $label, $d.name.TrimEnd('\'), $gb, $sum.programs, $sum.archives) `
+                    -Data @{ drive = $d.name; label = $d.label; size = $d.size; programs = $sum.programs; archives = $sum.archives }
+            }
+        }
+        Set-MonValue 'usb' $drives
+    }
+
+    # Installed programs: machine-wide, the child's own (only readable while signed in), Store apps.
+    if (Test-MonDue 'programs' 60) {
+        Update-ProgramList 'programs_machine' (Get-KcMachinePrograms)
+        Update-ProgramList 'programs_user' (Get-KcUserPrograms -Sid $childSid)
+    }
+    if (Test-MonDue 'store' 600) { Update-ProgramList 'programs_store' (Get-KcStoreApps -Sid $childSid) }
+
+    # Windows accounts and administrators.
+    if (Test-MonDue 'accounts' 120) {
+        $acc = Get-KcAccounts
+        if ($null -ne $acc) {
+            $old = Get-KcProp $mon 'accounts'
+            if ($null -ne $old) { Add-MonEvents (Get-KcAccountChangeEvents -Old $old -New $acc) }
+            Set-MonValue 'accounts' ([pscustomobject]$acc)
+        }
+    }
+
+    # Windows Defender real-time protection.
+    if (Test-MonDue 'defender' 300) {
+        $def = Get-KcDefenderState
+        if ($null -ne $def) {
+            $old = Get-KcProp $mon 'defender'
+            $was = $null
+            if ($null -ne $old) { $was = [bool](Get-KcProp $old 'realtime' $true) }
+            if ($null -ne $was -and $was -ne $def.realtime) {
+                if ($def.realtime) { Add-KcEvent -Type 'defender.enabled' -Message 'Windows Defender real-time protection is back on' }
+                else { Add-KcEvent -Type 'defender.disabled' -Severity warning -Message 'Windows Defender real-time protection was switched off' }
+            }
+            Set-MonValue 'defender' ([pscustomobject]$def)
+        }
+    }
+
+    # Archives: new files in Downloads, Desktop, Documents; archives opened in Explorer (Recent Items).
+    if (Test-MonDue 'archives' 300) {
+        if (-not $monRun.ProfilePath) { $monRun.ProfilePath = Get-KcProfilePath -Sid $childSid }
+        if ($monRun.ProfilePath) {
+            $files = @(Get-KcArchiveFiles -ProfilePath $monRun.ProfilePath)
+            $old = Get-KcProp $mon 'archives'
+            if ($null -ne $old) {
+                foreach ($f in (Compare-KcKeyed -Old @($old) -New $files -Key 'path').Added) {
+                    $mb = [Math]::Round($f.size / 1MB, 1)
+                    Add-KcEvent -Type 'archive.new' -Message "New archive: $([IO.Path]::GetFileName($f.path)) ($mb MB)" -Data @{ path = $f.path; size = $f.size }
+                }
+            }
+            Set-MonValue 'archives' $files
+            $recent = @(Get-KcRecentArchives -ProfilePath $monRun.ProfilePath)
+            $oldRecent = Get-KcProp $mon 'recent_archives'
+            if ($null -ne $oldRecent) {
+                foreach ($r in (Compare-KcKeyed -Old @($oldRecent) -New $recent -Key 'path').Added) {
+                    Add-KcEvent -Type 'archive.opened' -Message "Opened $($r.path)" -Data @{ path = $r.path; tool = 'explorer' }
+                }
+            }
+            Set-MonValue 'recent_archives' $recent
+        }
+    }
+
+    # Save at most once a minute.
+    if ($monRun.Dirty -and ($now - $monRun.SavedAt).TotalSeconds -ge 60) {
+        Set-MonValue 'seen' $monSeen   # a hashtable serialises straight to a JSON object
+        Write-KcJsonFile -Path $monitorFile -Object $mon
+        $monRun.Dirty = $false
+        $monRun.SavedAt = $now
     }
 }
 
@@ -486,6 +1222,8 @@ function Update-Enforcement {
         device_name       = Get-KcProp $state 'name'
         app_warnings      = @($appStops | Where-Object { $null -eq $_.ForceAt } | ForEach-Object { [ordered]@{ name = $_.Name; ends_at = (ConvertTo-KcIso $_.EndsAt) } })
         app_closing       = @($appStops | Where-Object { $null -ne $_.ForceAt } | ForEach-Object { $_.Path })
+        restart_tonight   = (Test-RestartTonight)
+        notices           = @($appRun.Notices | ForEach-Object { [ordered]@{ text = $_.text; until = (ConvertTo-KcIso $_.until) } })
     }
     $json = ConvertTo-Json -InputObject $uiState -Depth 5 -Compress
     if ($json -ne $script:lastUiJson) {
@@ -541,10 +1279,14 @@ while ($true) {
         if ($script:localDirty) { Save-Local; $script:localDirty = $false }
         Update-UiAgent
         Invoke-Commands
+        Invoke-AppRules
         Update-AppStops
+        Update-DriveScan
+        try { Update-Security } catch { Write-KcLog -Level warning -Message "Security: $($_.Exception.Message)" }
         Invoke-SyncStep
         Invoke-TamperCheck
         Update-ChildAdminStatus
+        try { Invoke-ChangeMonitor } catch { Write-KcLog -Level warning -Message "Change monitor: $($_.Exception.Message)" }
     } catch {
         Write-KcLog -Level error -Message ("Watchdog loop error: {0} {1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
         Start-Sleep -Seconds 2

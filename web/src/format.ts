@@ -157,6 +157,43 @@ const EVENT_LABELS: Record<string, string> = {
   "admin.device_forgotten": "Remembered device forgotten",
   "admin.session_revoked": "Signed out a device",
   "device.installer_downloaded": "Installer downloaded",
+  "app.blocked": "Blocked app",
+  "app.time_up": "App's allowed time ended",
+  "config.app_rules_changed": "App rules changed",
+  "apps.custom_added": "App added",
+  "apps.custom_removed": "App removed from the list",
+  "files.scan_requested": "Drive scan requested",
+  "security.requested": "Security action requested",
+  "defender.threat_found": "Threat found",
+  "defender.scan_finished": "Virus scan finished",
+  "defender.scan_failed": "Virus scan failed",
+  "defender.scan_overdue": "No recent virus scan",
+  "defender.signatures_old": "Virus definitions out of date",
+  "defender.update_failed": "Virus definitions not updated",
+  "defender.threats_removed": "Threats removed",
+  "defender.remove_failed": "Threats not removed",
+  "windows_update.installed": "Windows updates installed",
+  "windows_update.failed": "Windows updates failed",
+  "windows_update.restart_pending": "Restart needed for updates",
+  "windows_update.restarting": "Restarting for updates",
+  "windows_update.paused": "Windows updates paused",
+  "windows_update.disabled": "Windows Update switched off",
+  "files.scan_started": "Drive scan started",
+  "files.scanned": "Drive scanned",
+  "files.scan_failed": "Drive scan failed",
+  "software.installed": "App installed",
+  "software.uninstalled": "App removed",
+  "software.vpn_detected": "VPN or remote-control app",
+  "program.first_run": "New program run",
+  "archive.new": "New archive file",
+  "archive.opened": "Archive opened",
+  "account.created": "Windows account created",
+  "account.deleted": "Windows account deleted",
+  "account.admin_added": "New administrator",
+  "account.admin_removed": "Administrator removed",
+  "defender.disabled": "Virus protection switched off",
+  "defender.enabled": "Virus protection back on",
+  "usb.connected": "USB drive connected",
   "agent.updated": "Kidputer Control updated",
   "agent.update_failed": "Update failed",
   "app.stop_requested": "Asked to close an app",
@@ -233,3 +270,16 @@ export function authMethodLabel(method: string | null | undefined): string {
   return (method && AUTH_METHODS[method]) || "Signed in";
 }
 
+
+/** "1.2 GB", "340 MB", "12 KB" (1024-based, as Windows shows sizes). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} bytes`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")} ${units[i]}`;
+}

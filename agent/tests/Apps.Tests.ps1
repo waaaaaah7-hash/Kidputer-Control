@@ -77,4 +77,84 @@ Test 'local state keeps handled commands and pending results across restarts' {
     Remove-Item -Recurse -Force $tmp
 }
 
+# --- App rules and usage ------------------------------------------------------------------------------------
+
+function D([string]$s) { [DateTimeOffset]::Parse($s, [Globalization.CultureInfo]::InvariantCulture) }
+$catalog = ('[
+  {"id":"minecraft_java","name":"Minecraft (Java)","category":"games","matchers":[{"exe":"javaw.exe","cmdline":"net.minecraft"},{"exe":"MinecraftLauncher.exe"}]},
+  {"id":"steam_games","name":"Steam games","category":"games","matchers":[{"path":"\\steamapps\\common\\"}]},
+  {"id":"roblox","name":"Roblox","category":"games","matchers":[{"exe":"RobloxPlayerBeta.exe"}]},
+  {"id":"chrome","name":"Google Chrome","category":"browsers","matchers":[{"exe":"chrome.exe"}]},
+  {"id":"custom:1","name":"My Steam Game","category":"Homework apps","matchers":[{"exe":"special.exe"}]}
+]' | ConvertFrom-Json)
+
+function Id($Path, $Original = $null, $Cmd = $null) { New-KcAppIdentity -Path $Path -VersionInfo @{ original_name = $Original } -CommandLine $Cmd }
+
+Test 'apps are recognised by file name, renamed copies by their original name, Minecraft Java by its command line' {
+    Assert-Equal 'roblox' (Find-KcCatalogApp -Identity (Id 'C:\Roblox\RobloxPlayerBeta.exe') -Catalog $catalog).id
+    Assert-Equal 'roblox' (Find-KcCatalogApp -Identity (Id 'C:\Users\Sam\homework.exe' 'RobloxPlayerBeta.exe') -Catalog $catalog).id
+    Assert-Equal 'minecraft_java' (Find-KcCatalogApp -Identity (Id 'C:\Java\bin\javaw.exe' $null '-cp x net.minecraft.client.main.Main') -Catalog $catalog).id
+    Assert-Equal $null (Find-KcCatalogApp -Identity (Id 'C:\Java\bin\javaw.exe' $null '-jar tool.jar') -Catalog $catalog)
+    Assert-Equal 'steam_games' (Find-KcCatalogApp -Identity (Id 'D:\SteamLibrary\steamapps\common\Terraria\Terraria.exe') -Catalog $catalog).id
+    Assert-Equal $null (Find-KcCatalogApp -Identity (Id 'C:\Tools\notes.exe') -Catalog $catalog)
+}
+
+Test "the parents' own apps are checked before the catalogue" {
+    $id = Id 'D:\SteamLibrary\steamapps\common\Thing\special.exe'
+    Assert-Equal 'custom:1' (Find-KcCatalogApp -Identity $id -Catalog $catalog).id
+}
+
+$rules = ('[
+  {"id":"r1","target_kind":"app","target":"minecraft_java","mode":"allow","windows":[],"allowed":[]},
+  {"id":"r2","target_kind":"app","target":"roblox","mode":"block","windows":[],"allowed":[]},
+  {"id":"r3","target_kind":"category","target":"games","mode":"schedule",
+   "windows":[{"day":0,"start":"16:00","end":"19:00"}],
+   "allowed":[{"start":"2026-01-12T16:00:00Z","end":"2026-01-12T19:00:00Z"},{"start":"2026-01-13T16:00:00Z","end":"2026-01-13T19:00:00Z"}]}
+]' | ConvertFrom-Json)
+
+Test "an app's own rule beats its category's rule" {
+    $mc = $catalog | Where-Object { $_.id -eq 'minecraft_java' }
+    $steam = $catalog | Where-Object { $_.id -eq 'steam_games' }
+    $chrome = $catalog | Where-Object { $_.id -eq 'chrome' }
+    Assert-Equal 'r1' (Get-KcAppRule -App $mc -Rules $rules).id
+    Assert-Equal 'r3' (Get-KcAppRule -App $steam -Rules $rules).id
+    Assert-Equal $null (Get-KcAppRule -App $chrome -Rules $rules)
+    Assert-Equal $null (Get-KcAppRule -App $null -Rules $rules)
+}
+
+Test 'allowed, blocked, and scheduled apps; outside the window the next start is known' {
+    $now = D '2026-01-12T20:00:00Z'
+    Assert-Equal $true (Test-KcAppAllowed -Rule $rules[0] -Now $now).Allowed
+    Assert-Equal $false (Test-KcAppAllowed -Rule $rules[1] -Now $now).Allowed
+    Assert-Equal $true (Test-KcAppAllowed -Rule $null -Now $now).Allowed
+    $in = Test-KcAppAllowed -Rule $rules[2] -Now (D '2026-01-12T17:00:00Z')
+    Assert-Equal $true $in.Allowed
+    Assert-Equal (D '2026-01-12T19:00:00Z') $in.Until
+    $out = Test-KcAppAllowed -Rule $rules[2] -Now $now
+    Assert-Equal $false $out.Allowed
+    Assert-Equal (D '2026-01-13T16:00:00Z') $out.NextStart
+    Assert-Match "available from" (Get-KcBlockedMessage -Name 'Steam games' -Decision $out)
+    Assert-Equal "Roblox isn't allowed on this PC." (Get-KcBlockedMessage -Name 'Roblox' -Decision (Test-KcAppAllowed -Rule $rules[1] -Now $now))
+}
+
+Test 'offline for weeks: schedules fall back to the weekly times on the PC clock' {
+    $utc = [TimeZoneInfo]::Utc
+    Assert-Equal $true (Test-KcAppAllowed -Rule $rules[2] -Now (D '2026-03-02T17:30:00Z') -UseWeekly -TimeZone $utc).Allowed   # a Monday
+    Assert-Equal $false (Test-KcAppAllowed -Rule $rules[2] -Now (D '2026-03-03T17:30:00Z') -UseWeekly -TimeZone $utc).Allowed  # Tuesday
+}
+
+Test 'usage is counted per local day from the server day boundaries' {
+    $days = @([pscustomobject]@{ day = '2026-01-12'; start = '2026-01-12T00:00:00Z' }, [pscustomobject]@{ day = '2026-01-13'; start = '2026-01-13T00:00:00Z' })
+    Assert-Equal '2026-01-12' (Get-KcUsageDay -Now (D '2026-01-12T23:59:00Z') -DayStarts $days)
+    Assert-Equal '2026-01-13' (Get-KcUsageDay -Now (D '2026-01-13T00:00:00Z') -DayStarts $days)
+    Assert-Equal $null (Get-KcUsageDay -Now (D '2026-01-11T12:00:00Z') -DayStarts $days)
+    $u = @{}
+    Add-KcUsage -Usage $u -Day '2026-01-12' -Key 'roblox' -Name 'Roblox' -Category 'games' -Seconds 60
+    Add-KcUsage -Usage $u -Day '2026-01-12' -Key 'roblox' -Name 'Roblox' -Category 'games' -Seconds 30
+    Assert-Equal 90 $u['2026-01-12']['roblox'].seconds
+    for ($i = 1; $i -le 10; $i++) { Add-KcUsage -Usage $u -Day ('2026-02-{0:00}' -f $i) -Key '_total' -Name 'Screen time' -Seconds 1 }
+    Assert-Equal 8 $u.Count
+    Assert-Equal $false $u.ContainsKey('2026-01-12')
+}
+
 Complete-Tests
