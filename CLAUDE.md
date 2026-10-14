@@ -114,6 +114,8 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
   and closing them, and agent auto-update.
 - 1.2: change monitoring, app rules with a catalogue and custom apps, usage time, and the Files
   tab (drives, folder-size scans, live folder listing).
+- 1.3 so far (on DEV): the Security tab (#23): Defender status, threats and scans; Windows updates
+  installed automatically, with restarts at bedtime.
 
 **Not yet verified on real hardware**
 - Everything Windows-only: the WinForms lock screen, `CreateProcessAsUser`, the scheduled task,

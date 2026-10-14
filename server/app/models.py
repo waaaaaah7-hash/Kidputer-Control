@@ -223,6 +223,14 @@ class DeviceSettings(Base):
     auto_update: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     # Scan the PC's drives for folder sizes this often (days); 0 = only when a parent asks.
     scan_every_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("7"))
+    # Security tab (roadmap #23). 'install': install Windows updates automatically; 'report': only show them.
+    updates_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'install'"))
+    # Also install the big yearly Windows upgrades (feature updates).
+    feature_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Restart at bedtime when an update needs it.
+    restart_for_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # A full virus scan once a week, at bedtime.
+    weekly_full_scan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     device: Mapped[Device] = relationship(back_populates="settings")
@@ -234,6 +242,7 @@ class DeviceSettings(Base):
         CheckConstraint("pin_override_minutes BETWEEN 1 AND 1440", name="ck_settings_pin_override"),
         CheckConstraint("silent_alert_minutes BETWEEN 0 AND 1440", name="ck_settings_silent_alert"),
         CheckConstraint("scan_every_days BETWEEN 0 AND 90", name="ck_settings_scan_every"),
+        CheckConstraint("updates_mode IN ('install', 'report')", name="ck_settings_updates_mode"),
     )
 
 

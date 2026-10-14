@@ -51,6 +51,8 @@ export default function Devices() {
   );
 }
 
+const SECURITY_TONE = { ok: "ok", attention: "warn", unknown: "muted" } as const;
+
 /** One PC: how long until bedtime, and the three things parents do most, as big buttons. */
 function PcCard({ device, onChange }: { device: Device; onChange: () => Promise<void> }) {
   const extra = useLoader(
@@ -112,6 +114,12 @@ function PcCard({ device, onChange }: { device: Device; onChange: () => Promise<
               <Icon name="message" /> Message
             </button>
           </div>
+          {device.security && (
+            <Link className={`pc-card-security tone-${SECURITY_TONE[device.security.level]}`} to={`${href}?tab=security`}>
+              <Icon name="shield" size={18} />
+              <span className="grow">{device.security.text}</span>
+            </Link>
+          )}
           <ErrorNote error={extra.error} />
           <Link className="pc-card-foot" to={href}>
             <span>

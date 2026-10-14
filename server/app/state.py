@@ -133,6 +133,12 @@ def build_state(db: Session, device: Device, now: datetime) -> dict[str, Any]:
         "commands": [{"id": str(c.id), "kind": c.kind, "payload": c.payload} for c in pending_commands(db, device, now)],
         "agent_update": _agent_update(s.auto_update),
         "scan_every_days": s.scan_every_days,
+        "security": {
+            "updates_mode": s.updates_mode,
+            "feature_updates": s.feature_updates,
+            "restart_for_updates": s.restart_for_updates,
+            "weekly_full_scan": s.weekly_full_scan,
+        },
         "app_catalog": app_catalog(db),
         "app_rules": app_rules_snapshot(db, device, hour),
         "day_starts": day_starts(device.timezone, hour),

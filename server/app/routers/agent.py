@@ -241,6 +241,7 @@ REPORT_LIMITS: dict[str, int] = {
     "processes": 512 * 1024,
     "usage": 256 * 1024,
     "drives": 64 * 1024,
+    "security": 256 * 1024,
 }
 
 

@@ -617,3 +617,81 @@ def test_files_tab(page, live_app):
     page.set_viewport_size({"width": 390, "height": 844})
     assert_fits_screen(page)
     shot(page, "61-files-phone")
+
+
+def test_security_tab(page, live_app):
+    from datetime import datetime, timedelta, timezone
+
+    def iso(dt):
+        return dt.isoformat().replace("+00:00", "Z")
+
+    now = datetime.now(timezone.utc)
+    _, secret = make_admin()
+    agent = make_enrolled_device(live_app)
+    page.on("dialog", lambda d: d.accept())
+    report = {
+        "defender": {
+            "available": True, "antivirus_enabled": True, "realtime": True, "tamper_protected": True,
+            "signatures_updated": iso(now - timedelta(hours=4)), "signature_version": "1.443.12.0",
+            "quick_scan_at": iso(now - timedelta(days=1)), "full_scan_at": iso(now - timedelta(days=5)),
+            "threats": [
+                {"id": "{B}", "name": "Trojan:Win32/Wacatac.B!ml", "severity": "severe", "status": "remove_failed", "needs_action": True,
+                 "detected_at": iso(now - timedelta(hours=2)), "files": ["C:\\Users\\Sam\\Downloads\\mods.zip"]},
+                {"id": "{A}", "name": "PUA:Win32/Presenoker", "severity": "low", "status": "quarantined", "needs_action": False,
+                 "detected_at": iso(now - timedelta(days=3)), "files": ["C:\\Users\\Sam\\Downloads\\setup.exe"]},
+            ],
+            "other_antivirus": [],
+        },
+        "updates": {
+            "windows": {"name": "Windows 11 Home", "version": "24H2", "build": "26100.4652"},
+            "reboot_required": True, "reboot_required_since": iso(now - timedelta(hours=6)), "paused_until": None, "service_disabled": False,
+            "last_search_at": iso(now - timedelta(hours=1)), "last_installed_at": iso(now - timedelta(days=2)),
+            "pending": [
+                {"title": "2026-10 Cumulative Update for Windows 11 Version 24H2 for x64-based Systems (KB5066835)", "kb": "KB5066835",
+                 "kind": "security", "size": 812 * 1024 * 1024, "severity": "Critical", "downloaded": True},
+                {"title": "Windows 11, version 25H2", "kb": None, "kind": "feature", "size": 3 * 1024**3, "severity": "", "downloaded": False},
+            ],
+            "last_check_at": iso(now - timedelta(hours=1)), "last_install": None,
+        },
+        "running": None,
+        "queued": [],
+    }
+    assert agent.post("/api/v1/agent/reports/security", json=report).status_code == 204
+    sign_in_ui(page, secret)
+
+    # The home card says what needs attention, and leads to the Security tab.
+    line = page.locator(".pc-card-security")
+    expect(line).to_contain_text("Threat needs action: Trojan:Win32/Wacatac.B!ml")
+    line.click()
+    expect(page.get_by_role("tab", name="Security")).to_have_attribute("aria-selected", "true")
+    expect(page.get_by_test_id("virus-status")).to_contain_text("Real-time protection")
+    threats = page.get_by_test_id("threats")
+    expect(threats).to_contain_text("Couldn't remove")
+    expect(threats).to_contain_text("Quarantined")
+    expect(page.get_by_test_id("update-status")).to_contain_text("Restart needed to finish installing")
+    expect(page.get_by_test_id("pending-updates")).to_contain_text("KB5066835")
+    expect(page.get_by_test_id("pending-updates")).to_contain_text("New Windows version")
+    shot(page, "70-security")
+
+    # Quick scan: the PC gets the request; while it runs, the tab says so.
+    page.get_by_role("button", name="Quick scan").click()
+    expect(page.get_by_text("Quick scan requested")).to_be_visible()
+    cmds = agent.get("/api/v1/agent/state").json()["commands"]
+    assert [(c["kind"], c["payload"]) for c in cmds] == [("security", {"action": "quick_scan"})]
+    agent.post("/api/v1/agent/reports/security", json=dict(report, running={"action": "quick_scan", "started_at": iso(now)}))
+    expect(page.get_by_test_id("security-activity")).to_contain_text("Quick virus scan", timeout=10000)
+    page.get_by_role("button", name="Remove threats").click()
+    expect(page.get_by_text("Asked the PC to remove the threats")).to_be_visible()
+    assert ("security", {"action": "remove_threats"}) in [(c["kind"], c["payload"]) for c in agent.get("/api/v1/agent/state").json()["commands"]]
+
+    # Settings: only report updates, no weekly full scan.
+    page.get_by_label("Only show me what's waiting").check()
+    page.get_by_label("Full virus scan every week, at bedtime").uncheck()
+    page.get_by_role("button", name="Save security settings").click()
+    expect(page.get_by_text("Security settings saved")).to_be_visible()
+    sec = agent.get("/api/v1/agent/state").json()["security"]
+    assert sec["updates_mode"] == "report" and sec["weekly_full_scan"] is False
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_fits_screen(page)
+    shot(page, "71-security-phone")

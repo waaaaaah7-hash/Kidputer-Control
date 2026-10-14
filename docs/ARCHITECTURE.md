@@ -167,7 +167,7 @@ All endpoints are under `/api/v1/agent`. Every call except `enroll` needs the de
 | `GET /state` (send `If-None-Match`) | Full desired-state snapshot, or `304`. The `ETag` is a hash of the snapshot. `X-Server-Time` lets the agent detect clock skew. |
 | `POST /events` `{events:[…≤500]}` | Flush the local event queue. Returns `{accepted, duplicates}`. Safe to retry. |
 | `POST /heartbeat` `{agent_version, status:{…}}` | Free-form live status shown in the dashboard, for example `locked`, `ui_agent_alive`, `child_is_admin` or `agent_bundle`. |
-| `POST /reports/{kind}` | The latest copy of a bulk report (`processes`). Size-capped per kind. |
+| `POST /reports/{kind}` | The latest copy of a bulk report (`processes`, `usage`, `drives`, `security`, `scan:C`). Size-capped per kind. |
 | `POST /commands/{id}/result` `{status, result}` | Outcome of a dashboard command. Retries are ignored once recorded. |
 | `GET /update/manifest`, `GET /update/file?path=` | Auto-update: the agent files this server ships, with SHA-256s, and each file. |
 
@@ -322,6 +322,39 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
 - **Live listing:** a `list_folder` command returns one folder's entries (name, folder or file,
   size, modified, hidden, link), at most 3,000, for a full local path only.
 - **Never:** reading, previewing or downloading a file's contents. This is deliberate.
+
+## Security tab: virus protection and Windows updates (#23)
+
+- **Readings** (in the watchdog, every 30 minutes, every minute while live):
+  `KidputerControl.Security.psm1` reads Defender with `Get-MpComputerStatus`,
+  `Get-MpThreatDetection` and `Get-MpThreat`, other antivirus programs from Security Center
+  (`root/SecurityCenter2`), and Windows Update's quick facts: restart needed
+  (`Microsoft.Update.SystemInfo`), paused (`PauseUpdatesExpiryTime`), the `wuauserv` service
+  disabled, and the last search and install (`Microsoft.Update.AutoUpdate`).
+- **Jobs:** anything slow runs in `Security.ps1`, a separate below-normal-priority process, one at
+  a time from a queue, each with a time limit: `quick_scan`, `full_scan` (`Start-MpScan`),
+  `update_signatures`, `remove_threats`, `check_updates` (searching `Microsoft.Update.Session`)
+  and `install_updates` (download and install; never drivers, feature upgrades only if
+  `feature_updates`, nothing that asks the user questions). Jobs come from the dashboard
+  (`security` commands with an `action`) or from the watchdog: a check twice a day, an install
+  when routine updates are waiting (at most every 6 hours, not on battery below 50%, unless
+  `updates_mode` is `report`), a definitions update when they're 3 days old, and a full scan once
+  a week after 20 minutes of the bedtime lock (`weekly_full_scan`).
+- **Restart at bedtime:** when a restart is needed and `restart_for_updates` is on, the watchdog
+  runs `shutdown /r /t 120` once the scheduled lock has been on for 20 minutes, at most once in 12
+  hours and never during an install. While a restart is due, ui-state's `restart_tonight` makes the
+  countdown say so.
+- **Report:** `POST /reports/security` (Defender, updates, the running job and the queue), sent
+  when something changes and every 6 hours. What it remembers (threats already seen, the last
+  check and install, alert times) lives in `config\security\state.json`.
+- **Events:** `defender.threat_found` (critical; the first reading only learns what's there),
+  `defender.scan_finished`/`scan_failed`, `defender.signatures_old`, `defender.threats_removed`/
+  `remove_failed`, `windows_update.installed`/`failed`/`restart_pending`/`restarting`/`paused`/
+  `disabled`.
+- **Server:** `GET /devices/{id}/security` (report, summary, recent requests) and
+  `POST /devices/{id}/security/{action}`. `pc_security.summary` turns the report into the one-line
+  status shown on the PC's card (`DeviceOut.security`). Settings: `updates_mode`,
+  `feature_updates`, `restart_for_updates`, `weekly_full_scan`.
 
 ## Change monitoring (#17)
 

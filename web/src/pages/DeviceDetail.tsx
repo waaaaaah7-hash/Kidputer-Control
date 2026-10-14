@@ -9,6 +9,7 @@ import AppsTab, { CloseDialog } from "../device/AppsTab";
 import RulesTab from "../device/RulesTab";
 import UsageTab from "../device/UsageTab";
 import FilesTab from "../device/FilesTab";
+import SecurityTab from "../device/SecurityTab";
 import { UserCancelled } from "../cancel";
 import { useReauth } from "../reauthContext";
 import EventList from "../EventList";
@@ -43,6 +44,7 @@ const TABS = [
   { id: "rules", label: "App rules" },
   { id: "usage", label: "Usage" },
   { id: "files", label: "Files" },
+  { id: "security", label: "Security" },
   { id: "settings", label: "Schedule and settings" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -99,6 +101,7 @@ export default function DeviceDetail() {
       {tab === "rules" && <RulesTab device={device} />}
       {tab === "usage" && <UsageTab device={device} />}
       {tab === "files" && <FilesTab device={device} />}
+      {tab === "security" && <SecurityTab device={device} />}
       {tab === "overview" && (
         <div className="stack">
           {device.enrolled && <DayTimeline live={live.data} />}

@@ -7,10 +7,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
+from .. import pc_security
 from ..agent_bundle import load_bundle
 from ..audit import log_admin
+from ..commands import get_report
 from ..config import get_settings
 from ..installer import build_installer_zip
 from ..deps import AdminDep, DbDep, SettingsDep, VerifiedAdminDep, utcnow
@@ -59,7 +61,14 @@ def _device_out(d: Device) -> DeviceOut:
         created_at=d.created_at,
         mode=d.mode,
         agent_update_available=_update_available(d),
+        security=_security_summary(d),
     )
+
+
+def _security_summary(d: Device) -> dict | None:
+    db = object_session(d)
+    rep = get_report(db, d, "security") if db is not None else None
+    return pc_security.summary(rep.data, rep.updated_at, utcnow()) if rep else None
 
 
 def _update_available(d: Device) -> str | None:
@@ -83,6 +92,10 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         show_window_titles=s.show_window_titles,
         auto_update=s.auto_update,
         scan_every_days=s.scan_every_days,
+        updates_mode=s.updates_mode,
+        feature_updates=s.feature_updates,
+        restart_for_updates=s.restart_for_updates,
+        weekly_full_scan=s.weekly_full_scan,
         updated_at=s.updated_at,
     )
 

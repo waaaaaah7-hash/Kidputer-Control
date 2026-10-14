@@ -364,6 +364,9 @@ function Update-Ui {
         $ends = ConvertTo-KcDate $u.countdown_ends_at
         $left = [Math]::Max(0, [int][Math]::Ceiling(($ends - [DateTimeOffset]::UtcNow).TotalSeconds))
         $countdownText.Text = 'This PC locks in {0}:{1:00}' -f [int][Math]::Floor($left / 60), ($left % 60)
+        $hint = 'Save your work now.'
+        if ($u.PSObject.Properties['restart_tonight'] -and $u.restart_tonight) { $hint = 'Save your work: the PC restarts tonight to finish updates.' }
+        $countdownHint.Text = $hint
         if (-not $countdownForm.Visible) {
             $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
             $countdownForm.Location = New-Object System.Drawing.Point(($wa.Right - $countdownForm.Width - 16), ($wa.Bottom - $countdownForm.Height - 16))

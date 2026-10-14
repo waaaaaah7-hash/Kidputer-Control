@@ -371,3 +371,11 @@ button.bar-row:disabled:hover { background: none; }
 .live-folder { margin-top: 0.75rem; }
 .folders .bar-label { overflow: hidden; text-overflow: ellipsis; }
 .drive .btn { padding: 0.3rem 0.6rem; }
+
+/* Security (roadmap #23) */
+.pc-card-security { display: flex; align-items: center; gap: 0.5rem; min-height: 40px; padding: 0.4rem 0.75rem; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 0.92rem; }
+.pc-card-security:hover { text-decoration: underline; }
+.security-buttons { margin-top: 0.75rem; }
+.list-row.align-top { align-items: flex-start; }
+label.align-start-check { align-items: flex-start; }
+label.align-start-check input { margin-top: 0.3rem; }

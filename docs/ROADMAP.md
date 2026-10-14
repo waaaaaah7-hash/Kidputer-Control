@@ -37,6 +37,7 @@ practicality.
 | 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
 | 21 | Remember this device, with a signed-in devices page and re-checks for risky actions **(done)** | Requested | S | High | High |
 | 22 | Several parents: invite by link, remove, and names in the activity log **(done)** | Requested | S | High | High |
+| 23 | Security tab: virus protection (Defender scans and threats) and Windows updates **(built on DEV)** | Requested | M–L | High (Defender as the antivirus) | High |
 
 ## Release plan
 
@@ -45,7 +46,7 @@ practicality.
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
 | **1.1 (done)** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
 | **1.2 (done)** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
-| **1.3** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
+| **1.3** | Security tab: virus protection and Windows updates (#23, built on DEV). Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
 #20, #21 and #22 change only the server and dashboard, not the PC agent, so they can ship ahead of the
@@ -444,3 +445,53 @@ Both parents can manage the same PCs, each with their own sign-in.
 - **Who did what:** activity entries for parent actions show the parent's name.
 - Every parent sees and controls every PC. Per-parent permissions (for example, a grandparent
   who can only add extra time) could come later if needed.
+
+## 23. Security tab: virus protection and Windows updates — M–L — built on DEV
+
+Built and tested on DEV, ahead of the rest of 1.3. Like the other Windows-only parts it still
+needs checking on a real PC (checklist items 21–23 in `agent/README.md`).
+
+
+A **Security** tab on each PC's page, with virus protection and Windows updates side by side. Each
+PC's card on the home page gets one line: "Protected and up to date", or what needs attention.
+
+**Virus protection (Microsoft Defender)**
+- **Status:** real-time protection on or off, tamper protection, how old the virus definitions
+  are, and when the last quick and full scans ran.
+- **Threats found:** name, severity, when, which file, and what Defender did (quarantined,
+  removed, allowed, or still needs action).
+- **Buttons:** quick scan, full scan, update virus definitions, and remove threats.
+- **Weekly full scan** at bedtime, if wanted (on by default).
+- **Alerts:** a threat found (critical, right away), a threat that couldn't be removed, and virus
+  definitions more than three days old. Defender being switched off was already covered by #17.
+- **Other antivirus programs:** if Norton, McAfee and so on replace Defender, the tab shows which
+  one is installed and whether Windows reports it as on and up to date; its scans can't be shown or
+  started.
+
+**Windows updates**
+- **Status:** the Windows version and build, updates waiting (with their type: security, monthly,
+  feature upgrade, driver), whether a restart is needed, when updates were last checked and
+  installed, and whether updates are paused or Windows Update is switched off.
+- **Install automatically** (default) or only report. Monthly and security updates by default; the
+  big yearly Windows upgrades only if ticked. Not on battery below 50%.
+- **Restart at bedtime:** when an update needs a restart, the PC restarts once the bedtime lock has
+  been on for 20 minutes, so it never interrupts the child. A PC that's off every night restarts at
+  the next bedtime it's on for.
+- **Buttons:** check now, and install now.
+- **Alerts:** an update failed, a restart has been waiting for three days, and updates paused or
+  Windows Update switched off.
+
+**How it works**
+- The watchdog (SYSTEM) reads Defender's status with `Get-MpComputerStatus` and its history with
+  `Get-MpThreatDetection`, and Windows Update through its built-in programming interface
+  (`Microsoft.Update.Session`), on every Windows 10 and 11 edition.
+- Anything slow (a scan, a search for updates, an install) runs in a separate low-priority process,
+  one at a time, like the folder-size scans, so enforcement never waits.
+- Results go up as one "security" report; buttons are dashboard commands, as for closing apps.
+
+| Part | Effort | Feasibility | Practicality |
+|---|---|---|---|
+| Defender status, threats, scans, alerts | S–M | High while Defender is the antivirus | High |
+| Windows Update status, install, alerts | M | High; installs can fail for reasons outside our control | High |
+| Restart at bedtime | S | High | High: the step that most often gets stuck |
+| Hiding Windows' "Pause updates" button | S | Pro editions only, so not planned; pausing raises an alert instead | Medium |

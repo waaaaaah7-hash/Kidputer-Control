@@ -131,6 +131,74 @@ export interface SeenApp {
   last_seen: string | null;
 }
 
+// --- Security tab (roadmap #23) ---
+
+export interface SecuritySummary {
+  level: "ok" | "attention" | "unknown";
+  text: string;
+  items: { level: "attention" | "info"; text: string }[];
+}
+
+export interface Threat {
+  id: string;
+  name: string;
+  severity: "low" | "moderate" | "high" | "severe" | "unknown";
+  status: string;
+  needs_action: boolean;
+  detected_at: string | null;
+  files: string[];
+}
+
+export interface DefenderReport {
+  available: boolean;
+  antivirus_enabled: boolean;
+  realtime: boolean;
+  tamper_protected: boolean | null;
+  running_mode: string | null;
+  signatures_updated: string | null;
+  signature_version: string | null;
+  quick_scan_at: string | null;
+  full_scan_at: string | null;
+  threats: Threat[];
+  other_antivirus: { name: string; enabled: boolean; up_to_date: boolean }[];
+}
+
+export interface PendingUpdate {
+  title: string;
+  kb: string | null;
+  kind: "security" | "quality" | "definition" | "feature" | "driver";
+  size: number;
+  severity: string;
+  downloaded: boolean;
+}
+
+export interface UpdatesReport {
+  windows?: { name: string; version: string | null; build: string | null };
+  reboot_required?: boolean;
+  reboot_required_since?: string | null;
+  paused_until?: string | null;
+  service_disabled?: boolean;
+  last_search_at?: string | null;
+  last_installed_at?: string | null;
+  pending: PendingUpdate[];
+  last_check_at: string | null;
+  last_install: { at: string; installed: string[]; failed: string[]; message: string | null } | null;
+}
+
+export type SecurityAction = "quick_scan" | "full_scan" | "update_signatures" | "remove_threats" | "check_updates" | "install_updates";
+
+export interface SecurityState {
+  updated_at: string | null;
+  report: {
+    defender: DefenderReport | null;
+    updates: UpdatesReport;
+    running: { action: SecurityAction; started_at: string } | null;
+    queued: SecurityAction[];
+  } | null;
+  summary: SecuritySummary | null;
+  commands: DeviceCommand[];
+}
+
 export interface DriveInfo {
   name: string;
   label: string;
@@ -253,6 +321,8 @@ export interface Device {
   mode: DeviceMode;
   /** The agent version the server ships, when the PC still runs another one. */
   agent_update_available: string | null;
+  /** Security tab summary (roadmap #23); null before the PC's first report. */
+  security: SecuritySummary | null;
 }
 
 export interface EnrollmentCode {
@@ -279,6 +349,10 @@ export interface DeviceSettings {
   show_window_titles: boolean;
   auto_update: boolean;
   scan_every_days: number;
+  updates_mode: "install" | "report";
+  feature_updates: boolean;
+  restart_for_updates: boolean;
+  weekly_full_scan: boolean;
   updated_at: string;
 }
 
@@ -520,6 +594,8 @@ export const api = {
   drives: (id: string) => request<DrivesReport>("GET", `/devices/${encodeURIComponent(id)}/drives`),
   scan: (id: string, letter: string) => request<ScanResult>("GET", `/devices/${encodeURIComponent(id)}/scans/${letter}`),
   startScan: (id: string, letter: string) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/scans/${letter}`),
+  security: (id: string) => request<SecurityState>("GET", `/devices/${encodeURIComponent(id)}/security`),
+  securityAction: (id: string, action: SecurityAction) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/security/${action}`),
   listFolder: (id: string, path: string) => request<DeviceCommand>("POST", `/devices/${encodeURIComponent(id)}/files/list`, { path }),
 
   devices: () => request<Device[]>("GET", "/devices"),

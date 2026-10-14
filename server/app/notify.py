@@ -53,7 +53,9 @@ CATEGORIES: tuple[Category, ...] = (
     Category("first_run", "New programs run", "A program ran for the first time, for example a game from a zip file.", "immediate", "new programs"),
     Category("vpn", "VPN and remote-access apps", "A VPN or remote-control app (NordVPN, AnyDesk, TeamViewer, ...) appeared.", "immediate", "VPN or remote-access apps"),
     Category("accounts", "Windows accounts", "A Windows account was created or deleted, or someone became an administrator.", "immediate", "account changes"),
-    Category("defender", "Windows Defender", "Virus protection was switched off or back on.", "immediate", "Defender changes"),
+    Category("threats", "Viruses and threats", "Microsoft Defender found a threat on the PC, or couldn't remove one.", "immediate", "threats"),
+    Category("defender", "Virus protection", "Virus protection was switched off or back on, virus definitions are out of date, or a scan failed.", "immediate", "virus protection alerts"),
+    Category("windows_updates", "Windows updates", "An update failed, a restart has been waiting for days, or updates were paused or switched off.", "digest", "Windows update alerts"),
     Category("blocked_apps", "Blocked apps", "Your child tried to open an app outside its allowed times.", "digest", "blocked apps"),
     Category("limits", "Daily limits", "A daily screen-time or app limit ran out.", "digest", "limits reached", ready=False),
     Category("archives", "Zip and archive files", "New zip, rar or 7z files, or archives being opened.", "digest", "archive files"),
@@ -84,6 +86,15 @@ EVENT_NOTIFICATIONS: dict[str, tuple[str, str]] = {
     "account.admin_removed": ("accounts", "Administrator removed"),
     "defender.disabled": ("defender", "Virus protection off"),
     "defender.enabled": ("defender", "Virus protection back on"),
+    "defender.threat_found": ("threats", "Threat found"),
+    "defender.remove_failed": ("threats", "Threat not removed"),
+    "defender.signatures_old": ("defender", "Virus definitions out of date"),
+    "defender.scan_failed": ("defender", "Virus scan failed"),
+    "defender.update_failed": ("defender", "Virus definitions not updated"),
+    "windows_update.failed": ("windows_updates", "Updates failed"),
+    "windows_update.restart_pending": ("windows_updates", "Restart needed"),
+    "windows_update.paused": ("windows_updates", "Updates paused"),
+    "windows_update.disabled": ("windows_updates", "Windows Update switched off"),
     "app.blocked": ("blocked_apps", "Blocked app"),
     "limit.reached": ("limits", "Daily limit reached"),
     "archive.new": ("archives", "New archive file"),
@@ -134,6 +145,10 @@ def device_path(device_id: Any, tab: str | None = None) -> str:
     return f"/devices/{device_id}" + (f"?tab={tab}" if tab else "")
 
 
+# Alerts in these categories open this tab of the PC's page.
+CATEGORY_TABS = {"threats": "security", "defender": "security", "windows_updates": "security", "blocked_apps": "rules", "usb": "files"}
+
+
 def queue_for_event(
     db: Session,
     *,
@@ -151,7 +166,7 @@ def queue_for_event(
     title = f"{device.name}: {short}" if device is not None else short
     body = message or short
     if url is None and device is not None:
-        url = device_path(device.id)
+        url = device_path(device.id, CATEGORY_TABS.get(category))
     queued = 0
     for user in db.scalars(select(AdminUser).where(AdminUser.disabled_at.is_(None))):
         level = level_for(settings_for(db, user), category)

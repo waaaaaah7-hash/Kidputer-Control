@@ -38,6 +38,11 @@ or on their phone, and everything that happens is recorded in one central activi
   click through folders sorted by size, the largest files, space by type, and what grew since the
   last scan. Ask the PC what's in a folder right now. Names, sizes and dates only: files can't be
   opened or downloaded. Drives are scanned weekly in the background, or when you ask.
+- **Security:** Microsoft Defender's status, the threats it found and what it did about them, and
+  buttons for a quick or full scan, updating virus definitions and removing threats. Windows
+  updates waiting, installed automatically (or only shown, if you prefer), with the restart they
+  need done at bedtime. Alerts for threats, failed updates, and updates being paused. Each PC's card
+  on the home page says "Protected and up to date", or what needs attention.
 - **Change monitoring:** parents hear about apps installed or removed, programs run for the first
   time (for example a game straight from a zip), new zip files, USB drives, new Windows accounts or
   administrators, Defender being switched off, and VPN or remote-control apps.
@@ -83,6 +88,10 @@ or on their phone, and everything that happens is recorded in one central activi
 Files: drives, folder sizes, what changed, and the largest files:
 
 ![Files tab](docs/screenshots/files.png)
+
+Security: virus protection and Windows updates:
+
+![Security tab](docs/screenshots/security.png)
 
 The Parents section of the Account page:
 
@@ -164,9 +173,9 @@ For dashboard development with hot reload, run `cd web && npm install && npm run
 |---|---|
 | `server/tests` (pytest, real Postgres) | API, auth and 2FA, passkeys (with a software authenticator), remembered devices, parent invites and removal, modes, notifications (grouping, quiet hours, digests, encrypted push, "PC went silent"), running apps and commands, auto-update, app rules and custom apps, usage, drives and scans ("what changed"), lockouts, the agent protocol, UTC windows across daylight saving, serving the dashboard |
 | `server/tests/test_agent_integration.py` | The agent's PowerShell code against a live API (enroll, sync, events, PIN unlock, commands and reports, downloading and installing an update, a real folder-size scan uploaded) |
-| `server/tests/test_dashboard_e2e.py` | The whole parent journey in Chromium: passkeys with a virtual authenticator, inviting and removing a second parent, notification settings, running apps and closing one, app rules and custom apps, usage, the Files tab, and phone-width layout checks |
+| `server/tests/test_dashboard_e2e.py` | The whole parent journey in Chromium: passkeys with a virtual authenticator, inviting and removing a second parent, notification settings, running apps and closing one, app rules and custom apps, usage, the Files tab, the Security tab, and phone-width layout checks |
 | `web` (Vitest) | Status, time, schedule, app-grouping, rule-description, duration and size helpers |
-| `agent/tests` | Decision logic, countdown, PIN lockout, queue, inbox, tamper check, install modes, closing apps, app matching and rules, usage counting, change monitoring, the folder-size scanner, folder listing, auto-update (fingerprints, install, rollback), script parsing, interop compile |
+| `agent/tests` | Decision logic, countdown, PIN lockout, queue, inbox, tamper check, install modes, closing apps, app matching and rules, usage counting, change monitoring, the folder-size scanner, folder listing, auto-update (fingerprints, install, rollback), Defender threats and Windows update decisions, script parsing, interop compile |
 
 CI runs all of these. The agent tests run on Windows under both PowerShell 5.1 and 7.
 
@@ -174,12 +183,14 @@ CI runs all of these. The agent tests run on Windows under both PowerShell 5.1 a
 
 Version 1.2.0. Everything planned for 1.0, 1.1 and 1.2 is built: the cloud API, the agent, the
 SYSTEM watchdog, the dashboard, modes, notifications, running apps, automatic updates, change
-monitoring, app schedules and usage, and the Files tab.
+monitoring, app schedules and usage, and the Files tab. On DEV, the 1.3 Security tab (virus
+protection and Windows updates) is built too.
 
 **Not yet verified on a real PC:** the parts that need an interactive Windows session. These are
 the lock-screen windows, launching into the child's session, the scheduled task, the folder
 permissions, closing apps, the shutdown signal, installing an update, change monitoring, app
-rules, usage sampling, and drive scans. Before relying on the agent, run through the checklist in
+rules, usage sampling, drive scans, and the Security tab's Defender scans, Windows updates and
+restarts. Before relying on the agent, run through the checklist in
 `agent/README.md` once.
 
 ## Roadmap
@@ -196,6 +207,18 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **Security tab** (on DEV, part of 1.3):
+  - **Virus protection:** Defender on or off, tamper protection, how old the virus definitions
+    are, the last scans, and every threat found with what Defender did about it. Quick scan, full
+    scan, update definitions, and remove threats from the dashboard; a full scan every week at
+    bedtime.
+  - **Windows updates:** the Windows version, what's waiting, and when updates last installed.
+    Installed automatically (monthly and security updates; the big yearly upgrades only if you
+    tick it), not on a low battery. When an update needs a restart, the PC restarts at bedtime,
+    and that evening's countdown tells your child to save their work.
+  - **Alerts:** a threat found (right away), a threat that couldn't be removed, out-of-date virus
+    definitions, failed updates, a restart waiting for days, and updates paused or switched off.
 
 - **New dashboard look:**
   - Warm colours and a friendlier font, the same on a computer and a phone.
