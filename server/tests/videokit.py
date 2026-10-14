@@ -331,6 +331,7 @@ class FakePC:
         self.processes: list[dict[str, Any]] = []
         self.listings: dict[str, list[dict[str, Any]]] = {}
         self.child_signed_in = True
+        self.security: dict[str, Any] | None = None  # the Security tab's report, if this PC sends one
         self._stop = threading.Event()
         self._applied: set[str] = set()
         self._done_cmds: set[str] = set()
@@ -338,7 +339,7 @@ class FakePC:
 
     @classmethod
     def enroll(cls, base_url: str, code: str, hostname: str = "SAM-PC") -> "FakePC":
-        r = httpx.post(f"{base_url}/api/v1/agent/enroll", json={"enrollment_code": code, "hostname": hostname, "agent_version": "1.2.0"})
+        r = httpx.post(f"{base_url}/api/v1/agent/enroll", json={"enrollment_code": code, "hostname": hostname, "agent_version": "1.3.0"})
         r.raise_for_status()
         return cls(base_url, r.json()["device_token"])
 
@@ -387,7 +388,7 @@ class FakePC:
         if msg and msg["id"] not in self._applied:
             self._applied.add(msg["id"])
             self.event("message.displayed", "Message shown", data={"message_id": msg["id"]})
-        self.http.post("/api/v1/agent/heartbeat", json={"agent_version": "1.2.0", "status": status})
+        self.http.post("/api/v1/agent/heartbeat", json={"agent_version": "1.3.0", "status": status})
 
         for cmd in state.get("commands", []):
             if cmd["id"] in self._done_cmds:
@@ -411,10 +412,43 @@ class FakePC:
             path = payload["path"]
             entries = self.listings.get(path.rstrip("\\"), [])
             result = {"status": "done", "result": {"path": path, "entries": entries, "total": len(entries), "truncated": False}}
+        elif kind == "security" and self.security is not None:
+            result = {"status": "done", "result": self._security_job(payload.get("action", ""))}
         else:
             time.sleep(1)
             result = {"status": "done", "result": {}}
         self.http.post(f"/api/v1/agent/commands/{cmd['id']}/result", json=result)
+
+
+    def _security_job(self, action: str) -> dict:
+        """Act out a Security tab job: say it's running, take a few seconds, then report the outcome."""
+        sec = self.security
+        assert sec is not None
+        sec["running"] = {"action": action, "started_at": _iso(datetime.now(timezone.utc))}
+        self.report("security", sec)
+        time.sleep(6 if action in ("quick_scan", "install_updates") else 3)
+        now = _iso(datetime.now(timezone.utc))
+        d, u = sec["defender"], sec["updates"]
+        if action == "quick_scan":
+            d["quick_scan_at"] = now
+        elif action == "full_scan":
+            d["full_scan_at"] = now
+        elif action == "update_signatures":
+            d["signatures_updated"] = now
+        elif action == "remove_threats":
+            for t in d["threats"]:
+                if t["needs_action"]:
+                    t.update(status="removed", needs_action=False)
+        elif action == "install_updates":
+            done = [p["title"] for p in u["pending"] if p["kind"] in ("security", "quality", "definition")]
+            u["pending"] = [p for p in u["pending"] if p["title"] not in done]
+            u.update(last_install={"at": now, "installed": done, "failed": [], "message": None}, last_installed_at=now,
+                     reboot_required=True, reboot_required_since=now)
+        elif action == "check_updates":
+            u["last_check_at"] = now
+        sec["running"] = None
+        self.report("security", sec)
+        return {"minutes": 1}
 
 
 # --- Sample data ---------------------------------------------------------------------------------------
@@ -497,3 +531,38 @@ SAM_LISTING = {
         {"n": "school-project.docx", "dir": False, "s": 840 * 1024, "m": "2026-10-10T16:05:00Z", "h": False, "l": False},
     ],
 }
+
+
+def security_report(threat: bool = False, updates: bool = False) -> dict:
+    """A Security tab report: healthy, or with a threat that needs action and/or updates waiting."""
+    now = datetime.now(timezone.utc)
+    threats = [{"id": "{old}", "name": "PUA:Win32/Presenoker", "severity": "low", "status": "quarantined", "needs_action": False,
+                "detected_at": _iso(now - timedelta(days=9)), "files": ["C:\\Users\\Sam\\Downloads\\free-skins-setup.exe"]}]
+    if threat:
+        threats.insert(0, {"id": "{new}", "name": "Trojan:Win32/Wacatac.B!ml", "severity": "severe", "status": "remove_failed", "needs_action": True,
+                           "detected_at": _iso(now - timedelta(minutes=35)), "files": ["C:\\Users\\Sam\\Downloads\\modpack.zip"]})
+    pending = []
+    if updates:
+        pending = [
+            {"title": "2026-10 Cumulative Update for Windows 11 Version 24H2 for x64-based Systems (KB5066835)", "kb": "KB5066835",
+             "kind": "security", "size": 812 * 1024 * 1024, "severity": "Critical", "downloaded": True},
+            {"title": "2026-10 .NET Framework Update for Windows 11 (KB5066128)", "kb": "KB5066128", "kind": "quality",
+             "size": 74 * 1024 * 1024, "severity": "", "downloaded": True},
+        ]
+    return {
+        "defender": {
+            "available": True, "antivirus_enabled": True, "realtime": True, "tamper_protected": True,
+            "running_mode": "Normal", "signatures_updated": _iso(now - timedelta(hours=3)), "signature_version": "1.443.512.0",
+            "quick_scan_at": _iso(now - timedelta(hours=20)), "full_scan_at": _iso(now - timedelta(days=4)),
+            "threats": threats, "other_antivirus": [],
+        },
+        "updates": {
+            "windows": {"name": "Windows 11 Home", "version": "24H2", "build": "26100.4652", "edition": "Core"},
+            "pause_blocking": "unsupported", "install_waiting": None,
+            "reboot_required": False, "reboot_required_since": None, "paused_until": None, "service_disabled": False,
+            "last_search_at": _iso(now - timedelta(hours=2)), "last_installed_at": _iso(now - timedelta(days=3)),
+            "pending": pending, "last_check_at": _iso(now - timedelta(hours=2)), "last_install": None,
+        },
+        "running": None,
+        "queued": [],
+    }

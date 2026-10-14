@@ -101,9 +101,9 @@ The Parents section of the Account page:
 
 ## Video guides
 
-Eight short narrated videos cover the tour, setting up on Render, installing on the child's PC,
-everyday use from a phone, the 1.2 features, parents and security, the real-PC checklist, and an
-overview for developers. They're recorded from the real dashboard and can be re-recorded after the
+Nine short narrated videos cover the tour, setting up on Render, installing on the child's PC,
+everyday use from a phone, app rules and files, the Security tab, parents and sign-in security, the
+real-PC checklist, and an overview for developers. They're recorded from the real dashboard and can be re-recorded after the
 design changes: see [docs/VIDEOS.md](docs/VIDEOS.md).
 
 ## How it fits together
@@ -183,10 +183,10 @@ CI runs all of these. The agent tests run on Windows under both PowerShell 5.1 a
 
 ## Status
 
-Version 1.2.0. Everything planned for 1.0, 1.1 and 1.2 is built: the cloud API, the agent, the
-SYSTEM watchdog, the dashboard, modes, notifications, running apps, automatic updates, change
-monitoring, app schedules and usage, and the Files tab. On DEV, the 1.3 Security tab (virus
-protection and Windows updates) is built too.
+Version 1.3.0. Everything planned for 1.0 to 1.3 is built: the cloud API, the agent, the SYSTEM
+watchdog, the dashboard (redesigned in 1.3), modes, notifications, running apps, automatic updates,
+change monitoring, app schedules and usage, the Files tab, and the Security tab (virus protection
+and Windows updates).
 
 **Not yet verified on a real PC:** the parts that need an interactive Windows session. These are
 the lock-screen windows, launching into the child's session, the scheduled task, the folder
@@ -205,34 +205,38 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | **1.0.x** | Verify on a real Windows PC and fix what turns up. One-click installer download (done). |
 | **1.1 (done)** | Managed (standard account) and Trusted (administrator account) modes, chosen in the installer. Parent notifications by email and push, including when a PC goes silent. See running apps and stop them remotely. Agent auto-update. Sign in with passkeys and remember trusted devices. Several parents with their own sign-ins. |
 | **1.2 (done)** | Notifications for major changes: app installs, programs run for the first time, archives, new accounts, Defender, USB drives. A file explorer for the PC's drives with folder-size analysis, like TreeSize. Schedule when common apps are available. Add custom apps. Per-app usage time. |
-| **1.3** | Install requests that a parent approves (Managed mode). Daily screen-time quotas, an "ask for more time" button, schedule templates and holidays. |
+| **1.3 (done)** | A new dashboard look, built for phones. The Security tab: virus protection and Windows updates. Narrated video guides. |
+| **1.4** | Install requests that a parent approves (Managed mode). Daily screen-time quotas, an "ask for more time" button, schedule templates and holidays. |
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
 
-- **Security tab** (on DEV, part of 1.3):
-  - **Virus protection:** Defender on or off, tamper protection, how old the virus definitions
-    are, the last scans, and every threat found with what Defender did about it. Quick scan, full
-    scan, update definitions, and remove threats from the dashboard; a full scan every week at
-    bedtime.
-  - **Windows updates:** the Windows version, what's waiting, and when updates last installed.
-    Installed automatically (monthly and security updates; the big yearly upgrades only if you
-    tick it), not on a low battery or a metered connection such as mobile data. When an update
-    needs a restart, the PC restarts at bedtime, and that evening's countdown tells your child to
-    save their work. On Windows Pro, Education and Enterprise, the "Pause updates" button is hidden
-    from your child (Windows Home doesn't allow that, so you're alerted instead).
-  - **Alerts:** a threat found (right away), a threat that couldn't be removed, out-of-date virus
-    definitions, no virus scan for two weeks, failed updates, a restart waiting for days, and updates paused or switched off.
-
-- **New dashboard look:**
-  - Warm colours and a friendlier font, the same on a computer and a phone.
-  - **Home:** a card per PC with the time left until bedtime and big Lock now, +30 min and Message
-    buttons, next to today's events.
-  - **A PC's page:** the countdown and all the quick actions at the top, a bar showing the day
-    hour by hour, the apps open right now with Close buttons, and the message box. The schedule and
-    settings moved to their own **Schedule and settings** section.
-  - **On a computer** a sidebar lists your PCs with a coloured dot for each one's status. **On a
-    phone** a menu bar along the bottom takes you to Home, Activity, Alerts and Account.
+- **Version 1.3.0:**
+  - **Security tab:**
+    - **Virus protection:** Defender on or off, tamper protection, how old the virus definitions
+      are, the last scans, and every threat found with what Defender did about it. Quick scan, full
+      scan, update definitions, and remove threats from the dashboard; a full scan every week at
+      bedtime.
+    - **Windows updates:** the Windows version, what's waiting, and when updates last installed.
+      Installed automatically (monthly and security updates; the big yearly upgrades only if you
+      tick it), not on a low battery or a metered connection such as mobile data. When an update
+      needs a restart, the PC restarts at bedtime, and that evening's countdown tells your child to
+      save their work. On Windows Pro, Education and Enterprise, the "Pause updates" button is hidden
+      from your child (Windows Home doesn't allow that, so you're alerted instead).
+    - **Alerts:** a threat found (right away), a threat that couldn't be removed, out-of-date virus
+      definitions, no virus scan for two weeks, failed updates, a restart waiting for days, and updates paused or switched off.
+  - **New dashboard look:**
+    - Warm colours and a friendlier font, the same on a computer and a phone.
+    - **Home:** a card per PC with the time left until bedtime and big Lock now, +30 min and Message
+      buttons, next to today's events.
+    - **A PC's page:** the countdown and all the quick actions at the top, a bar showing the day
+      hour by hour, the apps open right now with Close buttons, and the message box. The schedule and
+      settings moved to their own **Schedule and settings** section.
+    - **On a computer** a sidebar lists your PCs with a coloured dot for each one's status. **On a
+      phone** a menu bar along the bottom takes you to Home, Activity, Alerts and Account.
+  - **Video guides:** nine narrated videos recorded from the real dashboard (a tour, setup on
+    Render, installing on the PC, using it from a phone, and more). See
+    [docs/VIDEOS.md](docs/VIDEOS.md).
 
 - **Version 1.2.0:**
   - **Change monitoring:** alerts for apps installed or removed, programs run for the first time

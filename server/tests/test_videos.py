@@ -53,14 +53,14 @@ def recorder(browser, narrator, name, base_url=None, phone=False):
 
 # --- Sample family ------------------------------------------------------------------------------------
 
-def family(base_url: str, devices: bool = True) -> dict:
+def family(base_url: str, devices: bool = True, threat: bool = False, updates: bool = False) -> dict:
     """Alex (a parent) and, optionally, Sam's PC (played by FakePC) and an offline family laptop."""
     from app.db import SessionLocal
     from app.deps import utcnow
     from app.models import AdminUser, Device, DeviceSettings, ScheduleEntry
     from app.security import new_token, token_hash
 
-    from .videokit import APPS, FakePC, drives_report, pick_timezone, scan_report, usage_report
+    from .videokit import APPS, FakePC, drives_report, pick_timezone, scan_report, security_report, usage_report
 
     user, secret = make_admin()
     with SessionLocal() as db:
@@ -75,7 +75,7 @@ def family(base_url: str, devices: bool = True) -> dict:
         for name, host in (("Sam's PC", "SAM-PC"), ("Family laptop", "FAMILY-LAPTOP")):
             token = new_token()
             d = Device(name=name, timezone=tz, token_hash=token_hash(token), enrolled_at=utcnow() - timedelta(days=12), hostname=host,
-                       agent_version="1.2.0", last_seen_at=utcnow())
+                       agent_version="1.3.0", last_seen_at=utcnow())
             d.settings = DeviceSettings()
             d.schedule = [ScheduleEntry(day_of_week=i, lock_at=dtime(21, 0), unlock_at=dtime(7, 0)) for i in range(5)] + [
                 ScheduleEntry(day_of_week=i, lock_at=dtime(22, 30), unlock_at=dtime(8, 0)) for i in (5, 6)]
@@ -95,7 +95,9 @@ def family(base_url: str, devices: bool = True) -> dict:
     sam.report("drives", drives_report())
     sam.report("scan:C", scan_report(8))
     sam.report("scan:C", scan_report(20))
-    sam.http.post("/api/v1/agent/heartbeat", json={"agent_version": "1.2.0", "status": {"mode": "none", "reason": "none", "ui_agent_alive": True, "console_user_is_child": True}})
+    sam.security = security_report(threat=threat, updates=updates)
+    sam.report("security", sam.security)
+    sam.http.post("/api/v1/agent/heartbeat", json={"agent_version": "1.3.0", "status": {"mode": "none", "reason": "none", "ui_agent_alive": True, "console_user_is_child": True}})
     sam.event("pc.resumed", "The PC woke from sleep", ago=timedelta(minutes=96))
     sam.event("software.installed", "Steam installed", severity="warning", ago=timedelta(minutes=88))
     sam.event("program.first_run", "OptiFine installer ran for the first time, from Downloads\\modpack.zip", severity="warning", ago=timedelta(minutes=70))
@@ -105,7 +107,7 @@ def family(base_url: str, devices: bool = True) -> dict:
 
     laptop = FakePC(base_url, tokens["Family laptop"])
     laptop.report("usage", {"days": {today: {"_total": {"name": "Screen time", "seconds": 2880}}}})
-    laptop.http.post("/api/v1/agent/heartbeat", json={"agent_version": "1.2.0", "status": {"mode": "none", "reason": "none", "ui_agent_alive": True, "console_user_is_child": False}})
+    laptop.http.post("/api/v1/agent/heartbeat", json={"agent_version": "1.3.0", "status": {"mode": "none", "reason": "none", "ui_agent_alive": True, "console_user_is_child": False}})
     laptop.event("pc.shutting_down", "The PC is shutting down", ago=timedelta(minutes=100))
     with SessionLocal() as db:
         db.get(Device, world["Family laptop"]).last_seen_at = utcnow() - timedelta(minutes=100)
@@ -163,6 +165,8 @@ def test_01_tour(browser, narrator, live_app):
         r.point(card.get_by_role("button", name="+30 min"))
     with r.say("or put a message on the screen."):
         r.point(card.get_by_role("button", name="Message"))
+    with r.say("Under the buttons, one line sums up the PC's security: its virus protection and Windows updates. Here, all is well."):
+        r.point(card.locator(".pc-card-security"))
     with r.say("Beside the cards is today's activity: apps that were blocked, programs that were installed, and everything parents did."):
         r.point(p.locator(".home-feed .card-head"))
     with r.say("The sidebar lists your PCs. A green dot means the PC is on and checking in; grey means it's off or asleep."):
@@ -208,9 +212,9 @@ def test_01_tour(browser, narrator, live_app):
         r.point(p.locator(".hero .list-row"))
     r.click(p.locator(".hero .list-row").get_by_role("button", name="Cancel"))
 
-    with r.say("The tabs cover the rest: apps, app rules, usage time, files, and the schedule and settings."):
+    with r.say("The tabs cover the rest: apps, app rules, usage time, files, security, and the schedule and settings."):
         r.point(p.get_by_role("tab", name="Apps"))
-        r.point(p.get_by_role("tab", name="Files"), settle=0.6)
+        r.point(p.get_by_role("tab", name="Security"), settle=0.6)
     r.click(p.get_by_role("tab", name="Schedule and settings"))
     r.scroll_to(p.locator(".schedule"))
     r.narrate("Here's the bedtime schedule: a lock time and an unlock time for each night, in the PC's own time zone.")
@@ -222,7 +226,7 @@ def test_01_tour(browser, narrator, live_app):
         r.click(main_nav(p, "Notifications"))
     r.wait(1.5)
     r.card("That's the tour", "Next: setting up on Render, installing on your child's PC, and using it from your phone.")
-    r.narrate("That's the tour. The other videos show how to set everything up, how to use it from your phone, and the newest features.")
+    r.narrate("That's the tour. The other videos show how to set everything up, how to use it from your phone, and the security tab.")
     w["sam"].stop()
     r.finish()
 
@@ -472,14 +476,13 @@ def test_04_phone(browser, narrator, live_app):
 
 # --- 5. New on DEV (version 1.2) -----------------------------------------------------------------------
 
-def test_05_new_on_dev(browser, narrator, live_app):
+def test_05_rules_usage_files(browser, narrator, live_app):
     w = family(live_app)
-    r = recorder(browser, narrator, "05-new-in-1-2", live_app)
+    r = recorder(browser, narrator, "05-rules-usage-files", live_app)
     p = r.page
-    r.title_slide("New in version 1.2", "App rules, usage time, files, change alerts and the new look")
+    r.title_slide("App rules, usage and files", "When apps may be used, screen time, drives and folders, and change alerts")
     r.narrate(
-        "This video covers what's new in version 1.2: app rules, usage time, the files tab, change alerts, and the dashboard's new look.",
-        "These are finished and tested on the DEV branch. They reach your live dashboard when DEV is merged into Main.",
+        "This video covers app rules, usage time, the files tab, and change alerts.",
     )
     sign_in(r, w["secret"], visible=False)
     r.click(p.get_by_role("link", name="Sam's PC").last)
@@ -554,8 +557,8 @@ def test_05_new_on_dev(browser, narrator, live_app):
     with r.say("For each kind of alert, choose right away, a daily summary, or off, on the Notifications page."):
         r.click(main_nav(p, "Notifications"))
         r.point(p.get_by_role("heading", name="What to tell you"))
-    r.title_slide("And the new look", "A home page built for phones, and one page per PC with everything at hand")
-    r.narrate("Finally, the dashboard has a new look, with big buttons on the home page, and one page per PC with everything at hand. The tour video shows it in full.")
+    r.title_slide("That's it", "App rules, usage, files and change alerts")
+    r.narrate("That's app rules, usage, files and change alerts. The security tab has its own video.")
     w["sam"].stop()
     r.finish()
 
@@ -644,6 +647,12 @@ def test_07_first_run_checklist(browser, narrator, live_app):
         ("<b>Usage</b>: idle time isn't counted", "Use a couple of apps, then leave the PC idle. The Usage tab counts the apps, but not the idle time."),
         ("<b>Files</b>: scan C:, games stay smooth, folder sizes appear", "And on the Files tab, scan drive C. Games stay smooth while it runs, and folder sizes appear afterwards."),
     ])
+    r.steps("Part 5", "Security tab", [
+        ("Download the harmless <b>EICAR</b> test file: a <b>Threat found</b> alert arrives", "For the security tab, download the EICAR test file. It's harmless, but every antivirus treats it as a virus. A threat found alert should arrive within a couple of minutes."),
+        ("<b>Quick scan</b>: the tab says it's running, then the time updates", "Click quick scan. The tab says it's running, and when it finishes, the last quick scan time updates."),
+        ("<b>Check now</b> and <b>Install now</b>: updates install", "Click check now, then install now if anything is waiting. The activity log says the updates installed."),
+        ("With a restart due, the bedtime <b>countdown says so</b>, and the PC restarts", "With a restart due, the bedtime countdown warns your child, and twenty minutes into the lock, the PC restarts."),
+    ])
     r.steps("If something's wrong", "Note it down", [
         ("What you did, and what you expected", "If anything doesn't work as described, note what you did, and what you expected to happen."),
         ("The time it happened", "Note the time."),
@@ -701,4 +710,71 @@ def test_08_for_developers(browser, narrator, live_app):
     ], numbered=False)
     r.title_slide("Happy hacking", "Start with CLAUDE.md and docs/ARCHITECTURE.md")
     r.narrate("A good place to start is the CLAUDE file, and the architecture document. Thanks for watching.")
+    r.finish()
+
+
+# --- 9. Security tab -------------------------------------------------------------------------------------
+
+def test_09_security(browser, narrator, live_app):
+    w = family(live_app, threat=True, updates=True)
+    r = recorder(browser, narrator, "09-security", live_app)
+    p = r.page
+    r.title_slide("The Security tab", "Virus protection and Windows updates")
+    r.narrate("This video shows the security tab: your child's virus protection, and Windows updates.")
+    sign_in(r, w["secret"], visible=False)
+    card = p.locator(".device-card", has_text="Sam's PC")
+    expect(card.locator(".pc-card-security")).to_contain_text("Threat needs action")
+    r.uncard()
+    with r.say("When something needs your attention, the PC's card on the home page says so. Here, Microsoft Defender found a threat it couldn't remove."):
+        r.point(card.locator(".pc-card-security"))
+    with r.say("Tap that line to open the security tab."):
+        r.click(card.locator(".pc-card-security"))
+    expect(p.get_by_test_id("virus-status")).to_be_visible()
+
+    with r.say("On the left is virus protection: whether it's on, how up to date the virus definitions are, and when the PC was last scanned."):
+        r.point(p.get_by_test_id("virus-status"))
+    threats = p.get_by_test_id("threats")
+    r.scroll_to(threats)
+    with r.say("Below that is every threat Defender has found, with what it did about it. This older one was quarantined: locked away where it can't do harm."):
+        r.point(threats.locator(".list-row", has_text="Presenoker"))
+    with r.say("This new one couldn't be removed automatically. Remove threats asks the PC to try again."):
+        r.point(threats.locator(".list-row", has_text="Wacatac"))
+        r.click(p.get_by_role("button", name="Remove threats"))
+    expect(threats.locator(".list-row", has_text="Wacatac")).to_contain_text("Removed", timeout=20000)
+    r.narrate("A few seconds later, it's removed.")
+    r.scroll_top()
+    with r.say("Quick scan checks the places viruses usually hide, in about five to fifteen minutes. Full scan checks everything, and takes longer."):
+        r.click(p.get_by_role("button", name="Quick scan"))
+    expect(p.get_by_test_id("security-activity")).to_be_visible(timeout=15000)
+    with r.say("While a scan runs, the tab says so. Your child can keep using the PC."):
+        r.point(p.get_by_test_id("security-activity"))
+    expect(p.get_by_test_id("security-activity")).to_be_hidden(timeout=20000)
+
+    updates = p.get_by_test_id("pending-updates")
+    with r.say("On the right are Windows updates: the Windows version, what's waiting to install, and when updates last installed."):
+        r.point(updates)
+    with r.say("Updates install by themselves, but Install now does it straight away."):
+        r.click(p.get_by_role("button", name="Install now"))
+    expect(p.get_by_test_id("update-status")).to_contain_text("Restart needed", timeout=25000)
+    with r.say("Most updates need a restart to finish. The PC does that at bedtime, twenty minutes after it locks, so it never interrupts your child. That evening's countdown tells them to save their work."):
+        r.point(p.get_by_test_id("update-status"))
+
+    settings = p.get_by_role("heading", name="Security settings")
+    r.scroll_to(settings)
+    with r.say("In the security settings, choose whether updates install automatically, or are only shown to you."):
+        r.point(p.get_by_label("Install Windows updates automatically"))
+    with r.say("The big yearly Windows upgrades are left out unless you tick this."):
+        r.point(p.get_by_label("Also install new Windows versions (the big yearly upgrades)"))
+    with r.say("On Windows Pro, this stops your child pausing updates. Windows Home doesn't allow that, so you get an alert instead if they're paused."):
+        r.point(p.get_by_text("Stop my child pausing Windows updates"))
+    with r.say("And a full virus scan runs every week at bedtime."):
+        r.point(p.get_by_text("Full virus scan every week, at bedtime"))
+
+    with r.say("You're alerted when a threat is found, straight away, and about failed updates, in the daily summary. Change either on the notifications page."):
+        r.click(main_nav(p, "Notifications"))
+        r.scroll_to(p.get_by_text("Viruses and threats"))
+        r.point(p.get_by_text("Viruses and threats"))
+    r.title_slide("Protected and up to date", "Virus protection and Windows updates, looked after")
+    r.narrate("That's the security tab: virus protection and Windows updates, looked after for you.")
+    w["sam"].stop()
     r.finish()

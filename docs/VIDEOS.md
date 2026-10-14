@@ -1,6 +1,6 @@
 # Instructional videos
 
-Eight narrated videos, recorded from the real dashboard with a simulated child's PC. Steps that
+Nine narrated videos, recorded from the real dashboard with a simulated child's PC. Steps that
 can't be filmed here (Render's website, Windows on the child's PC) are shown as slides.
 
 | Video | For | What it shows |
@@ -9,10 +9,11 @@ can't be filmed here (Render's website, Windows on the child's PC) are shown as 
 | `02-render-setup` | Whoever sets it up | Creating the service on Render, first sign-in with two-factor, tidying up, email alerts |
 | `03-install-on-pc` | Whoever sets it up | Adding a PC, Managed and Trusted modes, the installer, the schedule and PIN |
 | `04-from-your-phone` | Parents | Home screen install, everyday actions on a phone, phone notifications |
-| `05-new-in-1-2` | Parents | App rules, usage time, the Files tab, change alerts (version 1.2, on DEV until merged) |
+| `05-rules-usage-files` | Parents | App rules, usage time, the Files tab, change alerts |
 | `06-parents-and-security` | Parents | Inviting the other parent, passkeys, signed-in devices, built-in protections |
 | `07-first-run-checklist` | Whoever sets it up | The one-time check on a real Windows PC (`agent/README.md`) |
 | `08-for-developers` | Developers | How the project is built, branches, tests, traps |
+| `09-security` | Parents | The Security tab: threats, scans, Windows updates, restarts at bedtime, settings, alerts |
 
 The videos themselves aren't kept in the repository (they're large and change with the design).
 Re-record them after the dashboard changes.
@@ -29,7 +30,7 @@ test file so it can reuse the browser-test setup, and it's skipped unless `KC_VI
    `voices-v1.0.bin` as `voices.bin`, into `~/.cache/kokoro` (or another folder named by
    `KC_VIDEO_MODEL_DIR`), from
    <https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0>.
-4. Record (about 30 minutes for all eight; they play in real time):
+4. Record (about 35 minutes for all nine; they play in real time):
 
    ```bash
    cd server

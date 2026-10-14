@@ -1,6 +1,6 @@
 # Kidputer Control — Roadmap
 
-This is the plan after version 1.0.0. Versions 1.1.0 and 1.2.0 are built (everything in the 1.1 and 1.2 rows below), and the dashboard has had a redesign with a phone-first home page. It includes the features already on record (app and process
+This is the plan after version 1.0.0. Versions 1.1.0, 1.2.0 and 1.3.0 are built (everything in the 1.1, 1.2 and 1.3 rows below). It includes the features already on record (app and process
 management, usage quotas, weekly reports, bonus time), the Managed and Trusted modes with change
 notifications, and further suggestions. Each one is rated for effort, feasibility, and
 practicality.
@@ -37,7 +37,7 @@ practicality.
 | 20 | Passkeys: sign in with Face ID, fingerprint, or Windows Hello **(done)** | Requested | M | High | High |
 | 21 | Remember this device, with a signed-in devices page and re-checks for risky actions **(done)** | Requested | S | High | High |
 | 22 | Several parents: invite by link, remove, and names in the activity log **(done)** | Requested | S | High | High |
-| 23 | Security tab: virus protection (Defender scans and threats) and Windows updates **(built on DEV)** | Requested | M–L | High (Defender as the antivirus) | High |
+| 23 | Security tab: virus protection (Defender scans and threats) and Windows updates **(done)** | Requested | M–L | High (Defender as the antivirus) | High |
 
 ## Release plan
 
@@ -46,7 +46,8 @@ practicality.
 | **1.0.x** | Verify on a real PC (#0) and fix whatever turns up. One-click installer (#12, done). |
 | **1.1 (done)** | Managed and Trusted modes (#16). Parent notifications, with "PC went silent" and tamper alerts (#10). See and stop running apps (#1, #2). Agent auto-update (#13). Passkeys and remember this device (#20, #21, done). Several parents (#22, done). |
 | **1.2 (done)** | Change monitoring (#17), built on the same process monitoring as #1. Drives, file explorer, and folder-size analysis (#19). App availability schedules, the app catalogue, and custom apps (#3, #4). Per-app usage time (#5). |
-| **1.3** | Security tab: virus protection and Windows updates (#23, built on DEV). Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
+| **1.3 (done)** | The dashboard redesign (a phone-first home page and one page per PC). Security tab: virus protection and Windows updates (#23). Narrated video guides. |
+| **1.4** | Install requests for Managed mode (#18). Daily quotas (#6), "ask for more time" (#9), schedule templates and holidays (#11). |
 | **Later** | Weekly reports (#7), time bank (#8), several children per PC (#14), as needed. |
 
 #20, #21 and #22 change only the server and dashboard, not the PC agent, so they can ship ahead of the
@@ -446,10 +447,10 @@ Both parents can manage the same PCs, each with their own sign-in.
 - Every parent sees and controls every PC. Per-parent permissions (for example, a grandparent
   who can only add extra time) could come later if needed.
 
-## 23. Security tab: virus protection and Windows updates — M–L — built on DEV
+## 23. Security tab: virus protection and Windows updates — M–L — done
 
-Built and tested on DEV, ahead of the rest of 1.3. Like the other Windows-only parts it still
-needs checking on a real PC (checklist items 21–23 in `agent/README.md`).
+Released in 1.3.0. Like the other Windows-only parts it still needs checking on a real PC
+(checklist items 21–23 in `agent/README.md`).
 
 
 A **Security** tab on each PC's page, with virus protection and Windows updates side by side. Each

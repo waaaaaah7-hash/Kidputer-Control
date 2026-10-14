@@ -26,7 +26,7 @@ async def lifespan(_: FastAPI):
         stop.set()
 
 
-app = FastAPI(title="Kidputer Control API", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="Kidputer Control API", version="1.3.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 if _origins:
