@@ -231,6 +231,8 @@ class DeviceSettings(Base):
     restart_for_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     # A full virus scan once a week, at bedtime.
     weekly_full_scan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # Hide Windows' "Pause updates" button (honoured on Pro, Education and Enterprise; Home ignores it).
+    block_pause_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     device: Mapped[Device] = relationship(back_populates="settings")

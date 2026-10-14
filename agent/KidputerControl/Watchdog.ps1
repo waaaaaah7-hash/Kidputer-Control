@@ -673,12 +673,14 @@ $securityTimeout = @{ quick_scan = 90; full_scan = 360; update_signatures = 30; 
 $sec = @{
     Job = $null; Queue = (New-Object System.Collections.ArrayList); CheckedAt = [DateTimeOffset]::MinValue
     Defender = $null; Updates = $null; LockedSince = $null; Dirty = $true; SentAt = [DateTimeOffset]::MinValue
+    InstallWaiting = $null
 }
 # Kept across restarts.
 $secSaved = @{
     initialized = $false; seen_threats = @(); pending = @(); last_check_at = $null; last_check_try_at = $null; last_install = $null
     last_install_try_at = $null; last_auto_full_scan_at = $null; restart_requested_at = $null
     reboot_required_since = $null; restart_alert_at = $null; signatures_alert_at = $null; paused = $false; disabled = $false
+    scan_alert_at = $null; last_auto_quick_scan_at = $null; pause_blocked_by_us = $false
 }
 try {
     $saved = Read-KcJsonFile -Path $securityFile
@@ -799,6 +801,27 @@ function Update-SecurityReadings {
             Request-SecurityAction -Action 'update_signatures' -CommandId $null
         }
     }
+    # No virus scan for two weeks (once a week).
+    if ($def.available -and $def.antivirus_enabled) {
+        $age = Get-KcLastScanAge -QuickScanAt $def.quick_scan_at -FullScanAt $def.full_scan_at -Now $now
+        $lastAlert = ConvertTo-KcDate $secSaved.scan_alert_at
+        if ($null -ne $age -and $age -ge 14 -and ($null -eq $lastAlert -or ($now - $lastAlert).TotalDays -ge 7)) {
+            Add-KcEvent -Type 'defender.scan_overdue' -Severity warning -Message ("No virus scan for {0} days" -f [int]$age)
+            $secSaved.scan_alert_at = ConvertTo-KcIso $now
+        }
+    }
+    # Hide Windows' "Pause updates" button where the edition honours it (Pro, Education, Enterprise).
+    $supported = Test-KcEditionHonoursPolicies ([string]$upd.windows.edition)
+    try {
+        if ([bool](Get-SecuritySetting 'block_pause_updates' $true) -and $supported) {
+            if (-not (Test-KcPauseBlocked)) { Set-KcPauseBlocked -Block $true }
+            $secSaved.pause_blocked_by_us = $true
+        } elseif ($secSaved.pause_blocked_by_us) {
+            Set-KcPauseBlocked -Block $false
+            $secSaved.pause_blocked_by_us = $false
+        }
+    } catch { Write-KcLog -Level warning -Message "Pause updates setting: $($_.Exception.Message)" }
+    $upd.pause_blocking = $(if (-not $supported) { 'unsupported' } elseif (Test-KcPauseBlocked) { 'on' } else { 'off' })
     # A restart that's been waiting for days (once a day).
     if ($upd.reboot_required) {
         if (-not $secSaved.reboot_required_since) { $secSaved.reboot_required_since = ConvertTo-KcIso $now }
@@ -865,11 +888,15 @@ function Update-Security {
     if ($mode -eq 'install') {
         $wanted = @($secSaved.pending | Where-Object { Test-KcUpdateWanted -Kind ([string](Get-KcProp $_ 'kind' 'quality')) -IncludeFeature ([bool](Get-SecuritySetting 'feature_updates' $false)) })
         $lastTry = ConvertTo-KcDate $secSaved.last_install_try_at
+        $waitFor = $null
         if ($wanted.Count -and ($null -eq $lastTry -or ($now - $lastTry).TotalHours -ge 6)) {
             $batteries = @()
             try { $batteries = @(Get-CimInstance Win32_Battery -ErrorAction Stop) } catch { }
-            if (Test-KcPowerOk -Batteries $batteries) { Request-SecurityAction -Action 'install_updates' -CommandId $null }
+            if (-not (Test-KcPowerOk -Batteries $batteries)) { $waitFor = 'power' }
+            elseif (Test-KcMeteredConnection) { $waitFor = 'unmetered' }
+            else { Request-SecurityAction -Action 'install_updates' -CommandId $null }
         }
+        if ($waitFor -ne $sec.InstallWaiting) { $sec.InstallWaiting = $waitFor; $sec.Dirty = $true }
     }
     # Weekly full virus scan, at bedtime.
     if ([bool](Get-SecuritySetting 'weekly_full_scan' $true) -and $sec.LockedSince -and ($now - $sec.LockedSince).TotalMinutes -ge 20 -and $sec.Defender -and $sec.Defender.available) {
@@ -879,6 +906,16 @@ function Update-Security {
             $secSaved.last_auto_full_scan_at = ConvertTo-KcIso $now
             Save-SecurityState
             Request-SecurityAction -Action 'full_scan' -CommandId $null
+        }
+    }
+    # No full scans wanted, but nothing has scanned for a week: a quick scan at bedtime instead.
+    if (-not [bool](Get-SecuritySetting 'weekly_full_scan' $true) -and $sec.LockedSince -and ($now - $sec.LockedSince).TotalMinutes -ge 20 -and $sec.Defender -and $sec.Defender.available) {
+        $age = Get-KcLastScanAge -QuickScanAt $sec.Defender.quick_scan_at -FullScanAt $sec.Defender.full_scan_at -Now $now
+        $lastAuto = ConvertTo-KcDate $secSaved.last_auto_quick_scan_at
+        if (($null -eq $age -or $age -ge 7) -and ($null -eq $lastAuto -or ($now - $lastAuto).TotalDays -ge 6)) {
+            $secSaved.last_auto_quick_scan_at = ConvertTo-KcIso $now
+            Save-SecurityState
+            Request-SecurityAction -Action 'quick_scan' -CommandId $null
         }
     }
     # Restart at bedtime to finish installing updates (never in the middle of an install).
@@ -908,6 +945,8 @@ function Get-SecurityReport {
     $updates.pending = @($secSaved.pending)
     $updates.last_check_at = $secSaved.last_check_at
     $updates.last_install = $secSaved.last_install
+    # Updates waiting to install until the PC is on mains power ('power') or off a metered connection ('unmetered').
+    $updates.install_waiting = $sec.InstallWaiting
     [ordered]@{
         defender = $sec.Defender
         updates  = $updates

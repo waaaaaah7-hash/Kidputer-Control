@@ -263,6 +263,7 @@ class SettingsIn(BaseModel):
     feature_updates: bool | None = None
     restart_for_updates: bool | None = None
     weekly_full_scan: bool | None = None
+    block_pause_updates: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -283,6 +284,7 @@ class SettingsOut(BaseModel):
     feature_updates: bool
     restart_for_updates: bool
     weekly_full_scan: bool
+    block_pause_updates: bool
     updated_at: datetime
 
 

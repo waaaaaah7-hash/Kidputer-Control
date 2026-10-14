@@ -181,8 +181,11 @@ a short schedule window, or an immediate lock, set from the dashboard.
     arrives, and the threat is listed as quarantined or removed.
 22. **Windows updates:** the tab shows the Windows version, and within a few minutes of the agent
     starting, when updates were last checked. Click **Check now**, then **Install now** if anything
-    is waiting: "Windows updates installed" appears in the log. Pause updates in Windows Settings:
-    a "Windows updates paused" alert arrives within 30 minutes.
+    is waiting: "Windows updates installed" appears in the log. On Windows Pro, the "Pause
+    updates" button in Windows Settings is gone within 30 minutes (and the tab shows "Pausing
+    updates: Blocked"); on Home, pause updates there: a "Windows updates paused" alert arrives
+    within 30 minutes. On a laptop on a phone hotspot set as metered, waiting updates show "Waiting
+    to install until the PC is off a metered connection".
 23. **Restart at bedtime:** with an update waiting for a restart, set the bedtime lock a few
     minutes away. The countdown says the PC restarts tonight; 20 minutes after it locks, the PC
     restarts (with a 2-minute Windows notice), and the log shows "Restarting for updates".

@@ -173,6 +173,59 @@ function Test-KcPowerOk {
     $true
 }
 
+function Test-KcCostMetered {
+    <# Is a connection metered (mobile data, a phone hotspot marked as metered, roaming, or over its data limit)? #>
+    param([string]$NetworkCostType, [bool]$Roaming, [bool]$OverDataLimit)
+    ($NetworkCostType -eq 'Fixed' -or $NetworkCostType -eq 'Variable' -or $Roaming -or $OverDataLimit)
+}
+
+function Test-KcMeteredConnection {
+    <# The PC's internet connection is metered, so big downloads should wait. $false when it can't tell. #>
+    try {
+        $info = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]
+        $conn = $info::GetInternetConnectionProfile()
+        if ($null -eq $conn) { return $false }
+        $cost = $conn.GetConnectionCost()
+        return (Test-KcCostMetered -NetworkCostType ([string]$cost.NetworkCostType) -Roaming ([bool]$cost.Roaming) -OverDataLimit ([bool]$cost.OverDataLimit))
+    } catch { return $false }
+}
+
+function Test-KcEditionHonoursPolicies {
+    <# Windows Home ignores most Windows Update policies (such as hiding "Pause updates"); Pro, Education and Enterprise follow them. #>
+    param([string]$EditionId)
+    if (-not $EditionId) { return $false }
+    -not ($EditionId -like 'Core*')
+}
+
+$script:PauseKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+
+function Set-KcPauseBlocked {
+    <# Hide (or show again) the "Pause updates" button in Windows Settings, through the SetDisablePauseUXAccess policy. #>
+    param([bool]$Block)
+    if ($Block) {
+        if (-not (Test-Path $script:PauseKey)) { [void](New-Item -Path $script:PauseKey -Force) }
+        Set-ItemProperty -Path $script:PauseKey -Name 'SetDisablePauseUXAccess' -Value 1 -Type DWord
+    } else {
+        Remove-ItemProperty -Path $script:PauseKey -Name 'SetDisablePauseUXAccess' -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-KcPauseBlocked {
+    try { return ([int](Get-ItemProperty -Path $script:PauseKey -Name 'SetDisablePauseUXAccess' -ErrorAction Stop).SetDisablePauseUXAccess -eq 1) } catch { return $false }
+}
+
+function Get-KcLastScanAge {
+    <# Days since the last quick or full scan, whichever is newer; $null if neither has run. #>
+    param($QuickScanAt, $FullScanAt, [Parameter(Mandatory)][DateTimeOffset]$Now)
+    $last = $null
+    foreach ($v in $QuickScanAt, $FullScanAt) {
+        $d = ConvertTo-KcDate $v
+        if ($null -ne $d -and ($null -eq $last -or $d -gt $last)) { $last = $d }
+    }
+    if ($null -eq $last) { return $null }
+    ($Now - $last).TotalDays
+}
+
 function Test-KcRestartDue {
     <#
         Restart to finish updates now? Only when the parent allows it, a restart is needed, the bedtime
@@ -196,7 +249,7 @@ function Test-KcRestartDue {
 
 function Get-KcWindowsVersion {
     <# @{ name; version; build } e.g. Windows 11 Home, 24H2, 26100.4652. #>
-    $r = [ordered]@{ name = 'Windows'; version = $null; build = $null }
+    $r = [ordered]@{ name = 'Windows'; version = $null; build = $null; edition = $null }
     try {
         $cv = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
         $build = [int](Get-KcProp $cv 'CurrentBuild' 0)
@@ -206,6 +259,7 @@ function Get-KcWindowsVersion {
         $r.name = $name
         $r.version = [string](Get-KcProp $cv 'DisplayVersion' (Get-KcProp $cv 'ReleaseId' ''))
         $r.build = '{0}.{1}' -f $build, (Get-KcProp $cv 'UBR' 0)
+        $r.edition = [string](Get-KcProp $cv 'EditionID' '')
     } catch { }
     $r
 }

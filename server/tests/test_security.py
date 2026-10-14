@@ -72,6 +72,9 @@ def test_summary_protection_problems():
     s = summary(report(defender__antivirus_enabled=False, defender__other_antivirus=[dict(norton, up_to_date=False)]), NOW, NOW)
     assert s["text"] == "Norton 360 is out of date"
     assert summary(report(defender__available=False), NOW, NOW)["text"] == "No virus protection found"
+    s = summary(report(defender__quick_scan_at=iso(NOW - timedelta(days=20)), defender__full_scan_at=None), NOW, NOW)
+    assert s["text"] == "No virus scan for 20 days"
+    assert summary(report(defender__quick_scan_at=iso(NOW - timedelta(days=20))), NOW, NOW)["level"] == "ok"  # the full scan was recent
 
 
 def test_summary_windows_updates():
@@ -100,7 +103,7 @@ def test_security_report_and_summary_on_the_pc_list(admin_client, agent):
     assert admin_client.get("/api/v1/devices").json()[0]["security"] is None
 
     now = datetime.now(timezone.utc)
-    rep = report(defender__signatures_updated=iso(now - timedelta(hours=2)))
+    rep = report(defender__signatures_updated=iso(now - timedelta(hours=2)), defender__quick_scan_at=iso(now - timedelta(days=1)))
     assert agent.post("/api/v1/agent/reports/security", json=rep).status_code == 204
     r = admin_client.get(f"/api/v1/devices/{dev}/security").json()
     assert r["report"]["updates"]["windows"]["version"] == "24H2"
@@ -130,14 +133,17 @@ def test_security_actions_reach_the_pc(admin_client, agent):
 def test_security_settings_go_to_the_pc(admin_client, agent):
     dev = agent.device_id
     s = admin_client.get(f"/api/v1/devices/{dev}/settings").json()
-    assert (s["updates_mode"], s["feature_updates"], s["restart_for_updates"], s["weekly_full_scan"]) == ("install", False, True, True)
+    assert (s["updates_mode"], s["feature_updates"], s["restart_for_updates"], s["weekly_full_scan"], s["block_pause_updates"]) == (
+        "install", False, True, True, True)
     assert agent.get("/api/v1/agent/state").json()["security"] == {
-        "updates_mode": "install", "feature_updates": False, "restart_for_updates": True, "weekly_full_scan": True,
+        "updates_mode": "install", "feature_updates": False, "restart_for_updates": True, "weekly_full_scan": True, "block_pause_updates": True,
     }
-    r = admin_client.patch(f"/api/v1/devices/{dev}/settings", json={"updates_mode": "report", "feature_updates": True, "weekly_full_scan": False})
+    r = admin_client.patch(f"/api/v1/devices/{dev}/settings", json={"updates_mode": "report", "feature_updates": True, "weekly_full_scan": False,
+                                                                     "block_pause_updates": False})
     assert r.status_code == 200, r.text
     state = agent.get("/api/v1/agent/state").json()["security"]
     assert state["updates_mode"] == "report" and state["feature_updates"] is True and state["weekly_full_scan"] is False
+    assert state["block_pause_updates"] is False
     assert admin_client.patch(f"/api/v1/devices/{dev}/settings", json={"updates_mode": "never"}).status_code == 422
 
 

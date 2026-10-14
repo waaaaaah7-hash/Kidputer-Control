@@ -90,6 +90,7 @@ EVENT_NOTIFICATIONS: dict[str, tuple[str, str]] = {
     "defender.remove_failed": ("threats", "Threat not removed"),
     "defender.signatures_old": ("defender", "Virus definitions out of date"),
     "defender.scan_failed": ("defender", "Virus scan failed"),
+    "defender.scan_overdue": ("defender", "No recent virus scan"),
     "defender.update_failed": ("defender", "Virus definitions not updated"),
     "windows_update.failed": ("windows_updates", "Updates failed"),
     "windows_update.restart_pending": ("windows_updates", "Restart needed"),

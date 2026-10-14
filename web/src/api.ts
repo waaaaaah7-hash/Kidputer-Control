@@ -173,7 +173,11 @@ export interface PendingUpdate {
 }
 
 export interface UpdatesReport {
-  windows?: { name: string; version: string | null; build: string | null };
+  windows?: { name: string; version: string | null; build: string | null; edition?: string | null };
+  /** Is Windows' "Pause updates" button hidden? "unsupported" on Windows Home. */
+  pause_blocking?: "on" | "off" | "unsupported";
+  /** Updates are waiting for mains power, or for a connection that isn't metered. */
+  install_waiting?: "power" | "unmetered" | null;
   reboot_required?: boolean;
   reboot_required_since?: string | null;
   paused_until?: string | null;
@@ -353,6 +357,7 @@ export interface DeviceSettings {
   feature_updates: boolean;
   restart_for_updates: boolean;
   weekly_full_scan: boolean;
+  block_pause_updates: boolean;
   updated_at: string;
 }
 

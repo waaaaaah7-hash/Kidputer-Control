@@ -167,6 +167,7 @@ const EVENT_LABELS: Record<string, string> = {
   "defender.threat_found": "Threat found",
   "defender.scan_finished": "Virus scan finished",
   "defender.scan_failed": "Virus scan failed",
+  "defender.scan_overdue": "No recent virus scan",
   "defender.signatures_old": "Virus definitions out of date",
   "defender.update_failed": "Virus definitions not updated",
   "defender.threats_removed": "Threats removed",

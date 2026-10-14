@@ -462,8 +462,8 @@ PC's card on the home page gets one line: "Protected and up to date", or what ne
   removed, allowed, or still needs action).
 - **Buttons:** quick scan, full scan, update virus definitions, and remove threats.
 - **Weekly full scan** at bedtime, if wanted (on by default).
-- **Alerts:** a threat found (critical, right away), a threat that couldn't be removed, and virus
-  definitions more than three days old. Defender being switched off was already covered by #17.
+- **Alerts:** a threat found (critical, right away), a threat that couldn't be removed, virus
+  definitions more than three days old, and no virus scan for two weeks. Defender being switched off was already covered by #17.
 - **Other antivirus programs:** if Norton, McAfee and so on replace Defender, the tab shows which
   one is installed and whether Windows reports it as on and up to date; its scans can't be shown or
   started.
@@ -473,7 +473,10 @@ PC's card on the home page gets one line: "Protected and up to date", or what ne
   feature upgrade, driver), whether a restart is needed, when updates were last checked and
   installed, and whether updates are paused or Windows Update is switched off.
 - **Install automatically** (default) or only report. Monthly and security updates by default; the
-  big yearly Windows upgrades only if ticked. Not on battery below 50%.
+  big yearly Windows upgrades only if ticked. Not on battery below 50%, or on a metered connection
+  such as mobile data.
+- **Pausing:** on Pro, Education and Enterprise, the "Pause updates" button is hidden from the
+  child (on by default). Windows Home doesn't allow that, so pausing raises an alert instead.
 - **Restart at bedtime:** when an update needs a restart, the PC restarts once the bedtime lock has
   been on for 20 minutes, so it never interrupts the child. A PC that's off every night restarts at
   the next bedtime it's on for.
@@ -494,4 +497,4 @@ PC's card on the home page gets one line: "Protected and up to date", or what ne
 | Defender status, threats, scans, alerts | S–M | High while Defender is the antivirus | High |
 | Windows Update status, install, alerts | M | High; installs can fail for reasons outside our control | High |
 | Restart at bedtime | S | High | High: the step that most often gets stuck |
-| Hiding Windows' "Pause updates" button | S | Pro editions only, so not planned; pausing raises an alert instead | Medium |
+| Hiding Windows' "Pause updates" button | S | Pro, Education and Enterprise only; on Home, pausing raises an alert instead | Medium |

@@ -643,7 +643,8 @@ def test_security_tab(page, live_app):
             "other_antivirus": [],
         },
         "updates": {
-            "windows": {"name": "Windows 11 Home", "version": "24H2", "build": "26100.4652"},
+            "windows": {"name": "Windows 11 Home", "version": "24H2", "build": "26100.4652", "edition": "Core"},
+            "pause_blocking": "unsupported", "install_waiting": "unmetered",
             "reboot_required": True, "reboot_required_since": iso(now - timedelta(hours=6)), "paused_until": None, "service_disabled": False,
             "last_search_at": iso(now - timedelta(hours=1)), "last_installed_at": iso(now - timedelta(days=2)),
             "pending": [
@@ -671,6 +672,8 @@ def test_security_tab(page, live_app):
     expect(page.get_by_test_id("update-status")).to_contain_text("Restart needed to finish installing")
     expect(page.get_by_test_id("pending-updates")).to_contain_text("KB5066835")
     expect(page.get_by_test_id("pending-updates")).to_contain_text("New Windows version")
+    expect(page.get_by_text("Can't be blocked on Windows Home")).to_be_visible()
+    expect(page.get_by_test_id("install-waiting")).to_contain_text("metered connection")
     shot(page, "70-security")
 
     # Quick scan: the PC gets the request; while it runs, the tab says so.
@@ -687,10 +690,11 @@ def test_security_tab(page, live_app):
     # Settings: only report updates, no weekly full scan.
     page.get_by_label("Only show me what's waiting").check()
     page.get_by_label("Full virus scan every week, at bedtime").uncheck()
+    page.get_by_label("Stop my child pausing Windows updates").uncheck()
     page.get_by_role("button", name="Save security settings").click()
     expect(page.get_by_text("Security settings saved")).to_be_visible()
     sec = agent.get("/api/v1/agent/state").json()["security"]
-    assert sec["updates_mode"] == "report" and sec["weekly_full_scan"] is False
+    assert sec["updates_mode"] == "report" and sec["weekly_full_scan"] is False and sec["block_pause_updates"] is False
 
     page.set_viewport_size({"width": 390, "height": 844})
     assert_fits_screen(page)

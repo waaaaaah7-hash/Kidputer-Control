@@ -96,6 +96,7 @@ def _settings_out(s: DeviceSettings) -> SettingsOut:
         feature_updates=s.feature_updates,
         restart_for_updates=s.restart_for_updates,
         weekly_full_scan=s.weekly_full_scan,
+        block_pause_updates=s.block_pause_updates,
         updated_at=s.updated_at,
     )
 

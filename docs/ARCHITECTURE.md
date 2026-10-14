@@ -337,9 +337,16 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
   and `install_updates` (download and install; never drivers, feature upgrades only if
   `feature_updates`, nothing that asks the user questions). Jobs come from the dashboard
   (`security` commands with an `action`) or from the watchdog: a check twice a day, an install
-  when routine updates are waiting (at most every 6 hours, not on battery below 50%, unless
-  `updates_mode` is `report`), a definitions update when they're 3 days old, and a full scan once
-  a week after 20 minutes of the bedtime lock (`weekly_full_scan`).
+  when routine updates are waiting (at most every 6 hours, not on battery below 50% or on a
+  metered connection, unless `updates_mode` is `report`; the report's `install_waiting` says
+  which), a definitions update when they're 3 days old, and a full scan once a week after 20
+  minutes of the bedtime lock (`weekly_full_scan`; when that's off, a quick scan if nothing has
+  scanned for a week).
+- **Pausing updates:** with `block_pause_updates`, the watchdog sets the
+  `SetDisablePauseUXAccess` policy, which hides "Pause updates" in Windows Settings on Pro,
+  Education and Enterprise (EditionID not `Core*`); it removes the value again if the setting is
+  turned off. Home ignores the policy, so there the `windows_update.paused` alert is the safety
+  net. The report's `pause_blocking` is `on`, `off` or `unsupported`.
 - **Restart at bedtime:** when a restart is needed and `restart_for_updates` is on, the watchdog
   runs `shutdown /r /t 120` once the scheduled lock has been on for 20 minutes, at most once in 12
   hours and never during an install. While a restart is due, ui-state's `restart_tonight` makes the
@@ -348,13 +355,14 @@ folder, Windows' own process names, and Kidputer Control's files can never be cl
   when something changes and every 6 hours. What it remembers (threats already seen, the last
   check and install, alert times) lives in `config\security\state.json`.
 - **Events:** `defender.threat_found` (critical; the first reading only learns what's there),
-  `defender.scan_finished`/`scan_failed`, `defender.signatures_old`, `defender.threats_removed`/
+  `defender.scan_finished`/`scan_failed`, `defender.signatures_old`, `defender.scan_overdue` (no
+  scan for 14 days, at most weekly), `defender.threats_removed`/
   `remove_failed`, `windows_update.installed`/`failed`/`restart_pending`/`restarting`/`paused`/
   `disabled`.
 - **Server:** `GET /devices/{id}/security` (report, summary, recent requests) and
   `POST /devices/{id}/security/{action}`. `pc_security.summary` turns the report into the one-line
   status shown on the PC's card (`DeviceOut.security`). Settings: `updates_mode`,
-  `feature_updates`, `restart_for_updates`, `weekly_full_scan`.
+  `feature_updates`, `restart_for_updates`, `weekly_full_scan`, `block_pause_updates`.
 
 ## Change monitoring (#17)
 

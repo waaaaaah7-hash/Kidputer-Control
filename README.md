@@ -41,7 +41,9 @@ or on their phone, and everything that happens is recorded in one central activi
 - **Security:** Microsoft Defender's status, the threats it found and what it did about them, and
   buttons for a quick or full scan, updating virus definitions and removing threats. Windows
   updates waiting, installed automatically (or only shown, if you prefer), with the restart they
-  need done at bedtime. Alerts for threats, failed updates, and updates being paused. Each PC's card
+  need done at bedtime, and never over a metered connection or on a low battery. On Windows Pro,
+  your child can't pause updates. Alerts for threats, no recent virus scan, failed updates, and
+  updates being paused. Each PC's card
   on the home page says "Protected and up to date", or what needs attention.
 - **Change monitoring:** parents hear about apps installed or removed, programs run for the first
   time (for example a game straight from a zip), new zip files, USB drives, new Windows accounts or
@@ -215,10 +217,12 @@ The full plan, with effort, feasibility and practicality for each feature, is in
     bedtime.
   - **Windows updates:** the Windows version, what's waiting, and when updates last installed.
     Installed automatically (monthly and security updates; the big yearly upgrades only if you
-    tick it), not on a low battery. When an update needs a restart, the PC restarts at bedtime,
-    and that evening's countdown tells your child to save their work.
+    tick it), not on a low battery or a metered connection such as mobile data. When an update
+    needs a restart, the PC restarts at bedtime, and that evening's countdown tells your child to
+    save their work. On Windows Pro, Education and Enterprise, the "Pause updates" button is hidden
+    from your child (Windows Home doesn't allow that, so you're alerted instead).
   - **Alerts:** a threat found (right away), a threat that couldn't be removed, out-of-date virus
-    definitions, failed updates, a restart waiting for days, and updates paused or switched off.
+    definitions, no virus scan for two weeks, failed updates, a restart waiting for days, and updates paused or switched off.
 
 - **New dashboard look:**
   - Warm colours and a friendlier font, the same on a computer and a phone.

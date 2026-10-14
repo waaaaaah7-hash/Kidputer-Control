@@ -250,7 +250,25 @@ function UpdatesCard({ state, act }: { state: SecurityState; act: (a: SecurityAc
       <ul className="list">
         <Row label="Last checked">{when(u.last_check_at ?? u.last_search_at)}</Row>
         <Row label="Last installed">{when(u.last_installed_at)}</Row>
+        {u.pause_blocking && (
+          <Row label="Pausing updates">
+            {u.pause_blocking === "on" ? (
+              <Badge tone="ok">Blocked</Badge>
+            ) : u.pause_blocking === "off" ? (
+              <span>Allowed</span>
+            ) : (
+              <span className="muted">Can't be blocked on Windows Home</span>
+            )}
+          </Row>
+        )}
       </ul>
+      {u.install_waiting && waiting.length > 0 && (
+        <p className="muted small" data-testid="install-waiting">
+          {u.install_waiting === "power"
+            ? "Waiting to install until the PC is plugged in (the battery is below half)."
+            : "Waiting to install until the PC is off a metered connection, such as mobile data."}
+        </p>
+      )}
       {failed && <p className="warning-note small">Didn't install: {u.last_install!.failed.slice(0, 3).join("; ")}. The PC tries again later.</p>}
       {waiting.length > 0 && (
         <>
@@ -285,15 +303,15 @@ function UpdatesCard({ state, act }: { state: SecurityState; act: (a: SecurityAc
   );
 }
 
-type SecurityForm = Pick<DeviceSettings, "updates_mode" | "feature_updates" | "restart_for_updates" | "weekly_full_scan">;
+type SecurityForm = Pick<DeviceSettings, "updates_mode" | "feature_updates" | "restart_for_updates" | "weekly_full_scan" | "block_pause_updates">;
 
 function SecuritySettings({ device }: { device: Device }) {
   const loaded = useLoader(() => api.settings(device.id), [device.id]);
   const [form, setForm] = useState<SecurityForm | null>(null);
   useEffect(() => {
     if (loaded.data) {
-      const { updates_mode, feature_updates, restart_for_updates, weekly_full_scan } = loaded.data;
-      setForm({ updates_mode, feature_updates, restart_for_updates, weekly_full_scan });
+      const { updates_mode, feature_updates, restart_for_updates, weekly_full_scan, block_pause_updates } = loaded.data;
+      setForm({ updates_mode, feature_updates, restart_for_updates, weekly_full_scan, block_pause_updates });
     }
   }, [loaded.data]);
   if (!form) return <Card title="Security settings">{loaded.error ? <ErrorNote error={loaded.error} /> : <Spinner />}</Card>;
@@ -302,7 +320,8 @@ function SecuritySettings({ device }: { device: Device }) {
     form.updates_mode !== d.updates_mode ||
     form.feature_updates !== d.feature_updates ||
     form.restart_for_updates !== d.restart_for_updates ||
-    form.weekly_full_scan !== d.weekly_full_scan;
+    form.weekly_full_scan !== d.weekly_full_scan ||
+    form.block_pause_updates !== d.block_pause_updates;
 
   return (
     <Card title="Security settings">
@@ -329,9 +348,19 @@ function SecuritySettings({ device }: { device: Device }) {
             <span className="block muted small">After the bedtime lock has been on for 20 minutes. That evening's countdown tells your child to save their work.</span>
           </span>
         </label>
-        <label className="inline">
+        <label className="inline align-start-check">
+          <input type="checkbox" checked={form.block_pause_updates} onChange={(e) => setForm({ ...form, block_pause_updates: e.target.checked })} />
+          <span>
+            Stop my child pausing Windows updates
+            <span className="block muted small">Hides "Pause updates" in Windows Settings on Windows Pro, Education and Enterprise. Windows Home doesn't allow it; you're alerted instead.</span>
+          </span>
+        </label>
+        <label className="inline align-start-check">
           <input type="checkbox" checked={form.weekly_full_scan} onChange={(e) => setForm({ ...form, weekly_full_scan: e.target.checked })} />
-          Full virus scan every week, at bedtime
+          <span>
+            Full virus scan every week, at bedtime
+            <span className="block muted small">If this is off, a quick scan runs at bedtime when there's been no scan for a week.</span>
+          </span>
         </label>
         <div className="form-actions">
           <ActionButton

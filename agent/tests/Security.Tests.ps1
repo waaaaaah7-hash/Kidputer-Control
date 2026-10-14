@@ -99,4 +99,24 @@ Test 'readings never throw, even off Windows' {
     Assert-True ($null -ne $upd.windows) 'windows version'
 }
 
+Test 'metered connections wait; Home editions ignore update policies' {
+    Assert-Equal $false (Test-KcCostMetered -NetworkCostType 'Unrestricted' -Roaming $false -OverDataLimit $false)
+    Assert-Equal $true (Test-KcCostMetered -NetworkCostType 'Fixed' -Roaming $false -OverDataLimit $false)
+    Assert-Equal $true (Test-KcCostMetered -NetworkCostType 'Variable' -Roaming $false -OverDataLimit $false)
+    Assert-Equal $true (Test-KcCostMetered -NetworkCostType 'Unrestricted' -Roaming $true -OverDataLimit $false)
+    Assert-Equal $false (Test-KcMeteredConnection)   # can't tell here: never blocks
+    Assert-Equal $false (Test-KcEditionHonoursPolicies 'Core')
+    Assert-Equal $false (Test-KcEditionHonoursPolicies 'CoreSingleLanguage')
+    Assert-Equal $true (Test-KcEditionHonoursPolicies 'Professional')
+    Assert-Equal $true (Test-KcEditionHonoursPolicies 'Education')
+    Assert-Equal $false (Test-KcEditionHonoursPolicies '')
+}
+
+Test 'days since the last virus scan, quick or full' {
+    $now = D '2026-01-20T12:00:00Z'
+    Assert-Equal 2 ([int](Get-KcLastScanAge -QuickScanAt '2026-01-18T12:00:00Z' -FullScanAt '2026-01-01T12:00:00Z' -Now $now))
+    Assert-Equal 19 ([int](Get-KcLastScanAge -QuickScanAt $null -FullScanAt '2026-01-01T12:00:00Z' -Now $now))
+    Assert-Equal $null (Get-KcLastScanAge -QuickScanAt $null -FullScanAt $null -Now $now)
+}
+
 Complete-Tests

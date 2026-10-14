@@ -64,6 +64,9 @@ def summary(data: dict[str, Any] | None, updated_at: datetime | None, now: datet
         sigs = _date(d.get("signatures_updated"))
         if sigs is not None and now - sigs > timedelta(days=3):
             add("attention", f"Virus definitions are {(now - sigs).days} days old")
+        scans = [s for s in (_date(d.get("quick_scan_at")), _date(d.get("full_scan_at"))) if s is not None]
+        if scans and now - max(scans) > timedelta(days=14):
+            add("attention", f"No virus scan for {(now - max(scans)).days} days")
     elif other_on:
         for a in other_on:
             if not a.get("up_to_date"):
