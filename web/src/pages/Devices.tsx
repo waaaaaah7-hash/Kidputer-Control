@@ -36,6 +36,9 @@ export default function Devices() {
           {devices.data?.length === 0 && (
             <Card>
               <p>No PCs yet. Add your child's PC to get an enrollment code for the installer.</p>
+              <p className="small">
+                New to Kidputer Control? The <Link to="/help">video guides</Link> show the setup step by step.
+              </p>
             </Card>
           )}
           {devices.data?.map((d) => <PcCard key={d.id} device={d} onChange={reload} />)}

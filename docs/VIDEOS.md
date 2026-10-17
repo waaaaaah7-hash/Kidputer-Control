@@ -1,5 +1,8 @@
 # Instructional videos
 
+**Watch them on YouTube: [Kidputer Control video guides](https://www.youtube.com/playlist?list=PLR4GI8Rc_Nl4)**. The dashboard's Help page
+links to the same playlist; the link lives in `web/src/help.ts`.
+
 Nine narrated videos, recorded from the real dashboard with a simulated child's PC. Steps that
 can't be filmed here (Render's website, Windows on the child's PC) are shown as slides.
 
@@ -16,7 +19,8 @@ can't be filmed here (Render's website, Windows on the child's PC) are shown as 
 | `09-security` | Parents | The Security tab: threats, scans, Windows updates, restarts at bedtime, settings, alerts |
 
 The videos themselves aren't kept in the repository (they're large and change with the design).
-Re-record them after the dashboard changes.
+Re-record them after the dashboard changes, then replace them in the YouTube playlist (keeping the
+playlist, so its link stays the same).
 
 ## Re-recording
 

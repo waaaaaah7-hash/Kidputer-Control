@@ -36,6 +36,11 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        <nav aria-label="Help" className="side-nav">
+          <NavLink to="/help">
+            <Icon name="help" /> Help and videos
+          </NavLink>
+        </nav>
         {(devices.data?.length ?? 0) > 0 && (
           <nav aria-label="PCs" className="side-nav">
             <p className="side-heading">PCs</p>
@@ -66,9 +71,14 @@ export default function Layout() {
           <span className="brand-mark" aria-hidden="true" />
           Kidputer Control
         </NavLink>
-        <button type="button" className="btn btn-ghost" onClick={() => void logout()}>
-          Sign out
-        </button>
+        <div className="row">
+          <NavLink to="/help" className="btn btn-ghost">
+            <Icon name="help" size={18} /> Help
+          </NavLink>
+          <button type="button" className="btn btn-ghost" onClick={() => void logout()}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       <main className="content">

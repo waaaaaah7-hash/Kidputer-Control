@@ -699,3 +699,28 @@ def test_security_tab(page, live_app):
     page.set_viewport_size({"width": 390, "height": 844})
     assert_fits_screen(page)
     shot(page, "71-security-phone")
+
+
+def test_help_page(page, live_app):
+    _, secret = make_admin()
+    sign_in_ui(page, secret)
+    # Before any PC is added, the home page points to the setup videos.
+    page.get_by_role("link", name="video guides").click()
+    expect(page.get_by_role("heading", name="Help", exact=True)).to_be_visible()
+    link = page.get_by_test_id("playlist-link")
+    expect(link).to_have_attribute("href", re.compile(r"^https://www\.youtube\.com/playlist\?list="))
+    expect(link).to_have_attribute("target", "_blank")
+    expect(page.get_by_text("Virus protection and Windows updates")).to_be_visible()
+    expect(page.get_by_text("Kidputer Control 1.3.0")).to_be_visible()
+    shot(page, "80-help")
+
+    # From the sidebar on a computer, and the top bar on a phone.
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Home").click()
+    page.get_by_role("navigation", name="Help").get_by_role("link", name="Help and videos").click()
+    expect(page.get_by_test_id("playlist-link")).to_be_visible()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto("/")
+    page.locator(".phone-bar").get_by_role("link", name="Help").click()
+    expect(page.get_by_test_id("playlist-link")).to_be_visible()
+    assert_fits_screen(page)
+    shot(page, "81-help-phone")

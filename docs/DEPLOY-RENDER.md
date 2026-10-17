@@ -1,5 +1,8 @@
 # Deploying to Render
 
+Prefer to watch? "Setting up the server on Render" in the [video guides](https://www.youtube.com/playlist?list=PLR4GI8Rc_Nl4) walks through
+this page.
+
 The whole cloud side is **one Render web service** plus **one Render Postgres database**. The web
 service runs the root `Dockerfile`, which builds the React dashboard and serves it from FastAPI.
 The dashboard is at `/` and the API at `/api` on the same address, so the login cookie works

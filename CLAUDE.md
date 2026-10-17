@@ -92,6 +92,8 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
   `get_by_role("navigation", name="Main")` at any width.
 - Colours are CSS variables at the top of `styles.css` (warm light and dark themes). Use them
   rather than new hex values.
+- The Help page (`/help`) links to the video guides' YouTube playlist. The link is in
+  `web/src/help.ts` (and in README, docs/VIDEOS.md, DEPLOY-RENDER.md and agent/README.md).
 
 **Security posture**
 - The PIN hash and the device token live only in the SYSTEM-only config folder.

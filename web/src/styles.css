@@ -379,3 +379,12 @@ button.bar-row:disabled:hover { background: none; }
 .list-row.align-top { align-items: flex-start; }
 label.align-start-check { align-items: flex-start; }
 label.align-start-check input { margin-top: 0.3rem; }
+
+/* Help */
+.help-watch { align-self: flex-start; min-height: 48px; padding: 0 1.25rem; margin: 0.5rem 0 0.25rem; }
+.help-videos h3 { margin-top: 0.75rem; }
+.faq { margin: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.faq dt { font-weight: 700; margin-top: 0.7rem; }
+.faq dt:first-child { margin-top: 0; }
+.faq dd { margin: 0; color: var(--muted); }
+.phone-bar .btn { padding: 0.4rem 0.6rem; }

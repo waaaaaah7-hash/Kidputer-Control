@@ -460,7 +460,9 @@ accepts one. The watchdog reports `child_is_admin` every 10 minutes and only rai
     Figtree font, bundled from `@fontsource-variable/figtree` so no font is loaded from elsewhere.
   - Layout: from 900 px wide, a sidebar with the main links and the PCs; below that, a slim top
     bar and a fixed menu bar along the bottom. A PC's page has its sections as tabs (Overview,
-    Apps, App rules, Usage, Files, Schedule and settings).
+    Apps, App rules, Usage, Files, Security, Schedule and settings).
+  - A Help page (`/help`) lists the video guides and links to their YouTube playlist (an ordinary
+    link that opens YouTube; nothing is embedded, so the Content-Security-Policy stays `'self'`).
   - The countdown to bedtime and the hour-by-hour bar are worked out in the browser from the PC's
     schedule and time zone (`web/src/bedtime.ts`), so they need no extra API.
 - **First admin:** Render's free tier has no shell, so the first admin is created at start-up from

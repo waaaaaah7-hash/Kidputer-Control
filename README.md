@@ -101,10 +101,13 @@ The Parents section of the Account page:
 
 ## Video guides
 
+**[Watch the video guides on YouTube](https://www.youtube.com/playlist?list=PLR4GI8Rc_Nl4)**
+
 Nine short narrated videos cover the tour, setting up on Render, installing on the child's PC,
 everyday use from a phone, app rules and files, the Security tab, parents and sign-in security, the
-real-PC checklist, and an overview for developers. They're recorded from the real dashboard and can be re-recorded after the
-design changes: see [docs/VIDEOS.md](docs/VIDEOS.md).
+real-PC checklist, and an overview for developers. The dashboard's **Help** page links to them
+too. They're recorded from the real dashboard and can be re-recorded after the design changes: see
+[docs/VIDEOS.md](docs/VIDEOS.md).
 
 ## How it fits together
 

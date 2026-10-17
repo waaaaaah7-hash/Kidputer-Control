@@ -13,6 +13,8 @@ minute). Every relaunch after the first is logged as `ui_agent.restarted`.
 
 ## Install
 
+"Installing on your child's PC" in the [video guides](https://www.youtube.com/playlist?list=PLR4GI8Rc_Nl4) shows these steps.
+
 Requirements:
 - Windows 10 or 11 with Windows PowerShell 5.1, which is built in.
 - An administrator account for the parent to install with.
@@ -107,6 +109,8 @@ A correct PIN unlocks for `pin_override_minutes`, which defaults to 60. It also 
 immediate lock. Both results sync to the dashboard.
 
 ## First-run checklist (do this once on the real PC)
+
+"Testing on a real PC" in the [video guides](https://www.youtube.com/playlist?list=PLR4GI8Rc_Nl4) walks through this checklist.
 
 The Windows-only parts can't run in CI, so check them by hand after the first install. Do it with
 a short schedule window, or an immediate lock, set from the dashboard.
