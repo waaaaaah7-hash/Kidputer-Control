@@ -12,7 +12,7 @@ import { ActionButton, Badge, Card, Dialog, ErrorNote, Spinner, errorMessage, us
 
 export default function Devices() {
   const devices = useLoader(() => api.devices(), [], 15000);
-  const events = useLoader(() => api.events({ limit: 8 }), [], 30000);
+  const events = useLoader(() => api.events({ limit: 12 }), [], 30000);
   const [adding, setAdding] = useState(false);
   const reload = async () => {
     await Promise.all([devices.reload(), events.reload()]);
@@ -45,7 +45,7 @@ export default function Devices() {
         </div>
         {(devices.data?.length ?? 0) > 0 && (
           <Card title="Today" className="home-feed" actions={<Link to="/activity">All activity</Link>}>
-            {events.data ? <EventList events={events.data} devices={devices.data} showDevice /> : <Spinner />}
+            {events.data ? <EventList events={events.data.filter((e) => e.event_type !== "admin.login")} devices={devices.data} showDevice /> : <Spinner />}
           </Card>
         )}
       </div>
@@ -87,7 +87,9 @@ function PcCard({ device, onChange }: { device: Device; onChange: () => Promise<
       </div>
       {device.enrolled && extra.data !== undefined && (
         <p className="countdown">
-          {summary.value && <span className={summary.value === "Locked" ? "countdown-value locked" : "countdown-value"}>{summary.value}</span>} <span className="muted">{summary.caption}</span>
+          {summary.value && (
+            <span className={`countdown-value${summary.value === "Locked" ? " locked" : ""}${status.online ? "" : " offline"}`}>{summary.value}</span>
+          )} <span className="muted">{summary.caption}</span>
         </p>
       )}
       {!device.enrolled ? (

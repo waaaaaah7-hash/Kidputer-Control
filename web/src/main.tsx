@@ -7,7 +7,10 @@ import { registerServiceWorker } from "./push";
 import { ReauthProvider } from "./reauth";
 import "@fontsource-variable/figtree";
 import "./styles.css";
+import { applyTheme, getTheme } from "./theme";
 import { ToastProvider } from "./ui";
+
+applyTheme(getTheme());
 
 registerServiceWorker();
 

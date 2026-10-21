@@ -119,13 +119,11 @@ export default function DeviceDetail() {
         </div>
       )}
       {tab === "settings" && (
-        <div className="columns">
-          <div className="stack">
-            <SchedulePanel device={device} onChange={refresh} />
-            <DevicePanel device={device} onChange={refresh} />
-          </div>
-          <div className="stack">
+        <div className="stack">
+          <SchedulePanel device={device} onChange={refresh} />
+          <div className="columns">
             <SettingsPanel device={device} onChange={refresh} />
+            <DevicePanel device={device} onChange={refresh} />
           </div>
         </div>
       )}
@@ -204,7 +202,7 @@ function Hero({ live, onChange, onMessage }: { live: Live; onChange: () => Promi
         </div>
         {summary.value && (
           <div className="hero-countdown">
-            <span className={summary.value === "Locked" ? "countdown-value locked" : "countdown-value"}>{summary.value}</span>
+            <span className={`countdown-value${summary.value === "Locked" ? " locked" : ""}${status.online ? "" : " offline"}`}>{summary.value}</span>
             <span className="muted">{summary.caption}</span>
           </div>
         )}

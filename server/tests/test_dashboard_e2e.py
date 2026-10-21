@@ -724,3 +724,17 @@ def test_help_page(page, live_app):
     expect(page.get_by_test_id("playlist-link")).to_be_visible()
     assert_fits_screen(page)
     shot(page, "81-help-phone")
+
+
+def test_appearance_choice(page, live_app):
+    _, secret = make_admin()
+    sign_in_ui(page, secret)
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Parents and account").click()
+    page.get_by_label("Dark", exact=True).check()
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(23, 20, 15)"
+    page.reload()  # remembered in this browser
+    expect(page.get_by_label("Dark", exact=True)).to_be_checked()
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+    page.get_by_label("Match this device").check()
+    assert page.evaluate("document.documentElement.dataset.theme") is None

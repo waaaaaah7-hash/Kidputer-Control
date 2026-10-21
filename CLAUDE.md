@@ -91,7 +91,10 @@ and the agent tests on Windows under both PowerShell 5.1 and 7.
   carry a `nav` named "Main"; only one is visible at a time, so tests can use
   `get_by_role("navigation", name="Main")` at any width.
 - Colours are CSS variables at the top of `styles.css` (warm light and dark themes). Use them
-  rather than new hex values.
+  rather than new hex values, and define any new one in all three places: light `:root`, dark
+  under `prefers-color-scheme` (guarded by `:root:not([data-theme="light"])`), and
+  `:root[data-theme="dark"]`. The parent's Light/Dark choice (Account → Appearance) sets
+  `data-theme` on `<html>` via `web/src/theme.ts`, stored in localStorage on that device only.
 - The Help page (`/help`) links to the video guides' YouTube playlist. The link is in
   `web/src/help.ts` (and in README, docs/VIDEOS.md, DEPLOY-RENDER.md and agent/README.md).
 

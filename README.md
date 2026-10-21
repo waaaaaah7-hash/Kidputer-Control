@@ -14,6 +14,7 @@ or on their phone, and everything that happens is recorded in one central activi
   **+30 min** and **Message** buttons. On a phone the dashboard has a menu bar along the bottom,
   like an app; on a computer, a sidebar lists your PCs. A bar shows each PC's day hour by hour:
   when it's allowed, locked, or has extra time.
+  Light and dark themes: it follows your device, or pick one under Account → Appearance.
 - **Bedtime schedule:** a lock window for each night of the week, in the PC's own time zone. A
   countdown (5 minutes by default) warns the child before the PC locks.
 - **Lock now:** an immediate lock that applies even during extra time.
@@ -213,6 +214,17 @@ The full plan, with effort, feasibility and practicality for each feature, is in
 | **Later** | Weekly email reports, a bonus-time bank, several children per PC. |
 
 ## Recent changes
+
+- **Since 1.3.0 (on DEV, not yet released):**
+  - **Help page:** "Help and videos" in the sidebar (and **Help** in the top bar on a phone) links
+    to the video guides on YouTube, with a few common questions and the version you're running.
+  - **Light or dark:** the dashboard follows your phone or computer's setting, or you can choose
+    Light or Dark under **Account → Appearance** (remembered on that phone or computer).
+  - **Dark mode fixes:** the locked part of the hour-by-hour bar is striped so it shows up in the
+    dark, the Delete device button is easier to read, and a PC that's offline shows its countdown
+    greyed out (it can't count down without the PC).
+  - **Tidier pages:** the bedtime schedule spans the full width of Schedule and settings, and the
+    home page's "Today" list leaves out parent sign-ins (they're still in Activity).
 
 - **Version 1.3.0:**
   - **Security tab:**

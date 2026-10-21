@@ -6,6 +6,7 @@ import { UserCancelled } from "../cancel";
 import { authMethodLabel, describeUserAgent, formatDateTime, relativeTime } from "../format";
 import { addPasskey, passkeysSupported } from "../passkeys";
 import { useReauth } from "../reauthContext";
+import { getTheme, setTheme, type ThemeChoice } from "../theme";
 import { ActionButton, Badge, Card, ErrorNote, Spinner, errorMessage, useLoader, useToast } from "../ui";
 
 export default function Account() {
@@ -24,6 +25,7 @@ export default function Account() {
             </Link>
           </Card>
           <YourNameCard />
+          <AppearanceCard />
           <PasskeysCard />
           <Card title="Two-factor sign-in">
             <p>
@@ -453,6 +455,39 @@ function ChangePasswordCard() {
           </button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+const THEMES: { id: ThemeChoice; label: string }[] = [
+  { id: "system", label: "Match this device" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+];
+
+/** Light or dark, for this browser only: each parent's phone and computer can differ. */
+function AppearanceCard() {
+  const [theme, setChoice] = useState<ThemeChoice>(getTheme());
+  return (
+    <Card title="Appearance">
+      <fieldset className="theme-choice">
+        <legend className="sr-only">Light or dark</legend>
+        {THEMES.map((t) => (
+          <label key={t.id} className="inline">
+            <input
+              type="radio"
+              name="theme"
+              checked={theme === t.id}
+              onChange={() => {
+                setTheme(t.id);
+                setChoice(t.id);
+              }}
+            />
+            {t.label}
+          </label>
+        ))}
+      </fieldset>
+      <p className="muted small">Remembered on this phone or computer only. "Match this device" follows its light or dark setting.</p>
     </Card>
   );
 }
